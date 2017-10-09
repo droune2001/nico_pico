@@ -8,7 +8,7 @@ tiles={} -- tile map by name, stores id, bbox and flags.
 maps={}
 debug_rects={} -- map space pixels {x0,y0,x1,y1,color}
 
-g_nb_players = 1 -- 4
+g_nb_players = 4
 g_twp = 8 -- global tile width in pixels
 g_mop = {x=12,y=12} -- global map offsets in pixels
 g_tlc = 13 -- global number of tile lines
@@ -205,8 +205,8 @@ function can_move_to( test_pos )
     or test_bbox_ymax - tile_bbox_ymin < -epsilon
    then
     -- no collision
-	add(debug_rects,{x0=g_mop.x+tile_bbox_xmin,y0=g_mop.y+tile_bbox_ymin,x1=g_mop.x+tile_bbox_xmax-1,y1=g_mop.y+tile_bbox_ymax-1,c=9})
-	-- note: exact pixel coordinates for tiles, no need to use flr(). max - 1 to get exact top-left pixel corner
+	  add(debug_rects,{x0=g_mop.x+tile_bbox_xmin,y0=g_mop.y+tile_bbox_ymin,x1=g_mop.x+tile_bbox_xmax-1,y1=g_mop.y+tile_bbox_ymax-1,c=9})
+	  -- note: exact pixel coordinates for tiles, no need to use flr(). max - 1 to get exact top-left pixel corner
    else
     add(debug_rects,{x0=g_mop.x+tile_bbox_xmin,y0=g_mop.y+tile_bbox_ymin,x1=g_mop.x+tile_bbox_xmax-1,y1=g_mop.y+tile_bbox_ymax-1,c=8})
     return false
@@ -217,16 +217,26 @@ function can_move_to( test_pos )
  return true
 end
 
+-- function parameters are written as if only testing a vertical wall
+-- swap X and Y params to test horizontal walls.
 function test_wall( wallx, relx, rely, deltax, deltay, tmin, miny, maxy )
  local ok = false
  local tepsilon = 0.001
  if deltax ~= 0 then
+  -- time of collision. percent of where is the wall
+  -- on the way from box middle to object colliding
   local tresult = (wallx - relx) / deltax
+  -- use that time to find the y of collision on the way
+  -- y in box local coords
   local y = rely + tresult * deltay
+  -- if found a better tmin
   if tresult >= 0 and tmin > tresult then
+   -- if collision y is between wall bounds
    if y >= miny and y <= maxy then
+    -- clamp tmin to 0 if found a result too close.
+    -- avoid collision response if stuck to a wall
     tmin = max(0,tresult-tepsilon)
-	ok = true
+    ok = true
    end
   end
  end
@@ -235,7 +245,7 @@ end
 
 function move_player( p, deltap )
  
- -- todo: pas forcement player en fait... bombe slide, enemies
+ -- todo: not necessarily "player" in fact... bomb slide, enemies
  local entity_tile = tiles["player"]
  local entity_tile_bbox = entity_tile.bbox
  
@@ -272,84 +282,84 @@ function move_player( p, deltap )
  
  -- 4 iterations of the collides and sweep.
  for iteration=1,4 do
- 
+
   local tmin = 1.0
   local wall_normal = {x=0,y=0}
   local desired_location = {x = p.x + deltap.x, y = p.y + deltap.y}
   local hit_tile_index = {c=-1,l=-1}
-  
   local entity_bbox_center = {
    x = p.x + entity_tile_bbox.x + 0.5 * entity_tile_bbox.w,
    y = p.y + entity_tile_bbox.y + 0.5 * entity_tile_bbox.h}
-  
-  if entity_tile.tag == 1 then -- AND not non_spatial
-   for t in all(tile_indices) do
-   
-    local test_tile = tiles[maps[1][(t.l-1)*g_tcc+t.c].t]
-     -- tag == 1 is collidable
-    if test_tile.tag == 1 then -- AND not non_spatial
-	
-	 -- test_tile bbox in pixel map space
-	 local test_tile_bbox_center = {
-	  x = g_twp * (t.c-1) + test_tile.bbox.x + 0.5 * test_tile.bbox.w,
-	  y = g_twp * (t.c-1) + test_tile.bbox.y + 0.5 * test_tile.bbox.h}
 
-	 --[[ 
+  if entity_tile.tag == 1 then -- AND not non_spatial
+
+   for t in all(tile_indices) do
+
+    local test_tile = tiles[maps[1][(t.l-1)*g_tcc+t.c].t]
+    -- tag == 1 is collidable
+    if test_tile.tag == 1 then -- AND not non_spatial
+     -- test_tile bbox in pixel map space
+	   local test_tile_bbox_center = {
+	   x = g_twp * (t.c-1) + test_tile.bbox.x + 0.5 * test_tile.bbox.w,
+	   y = g_twp * (t.c-1) + test_tile.bbox.y + 0.5 * test_tile.bbox.h}
+
+	   --[[ 
      local tile_bbox_xmin = g_twp * (t.c-1) + test_tile.bbox.x
      local tile_bbox_ymin = g_twp * (t.l-1) + test_tile.bbox.y
      local tile_bbox_xmax = g_twp * (t.c-1) + test_tile.bbox.x + test_tile.bbox.w
      local tile_bbox_ymax = g_twp * (t.l-1) + test_tile.bbox.y + test_tile.bbox.h
      ]]
 	 
-	 -- minkowsky sum of test_tile and entity_tile
-	 -- dans le repere centre bbox de la test_entity
-	 local min_box = {
-	  x = -0.5 * ( test_tile.bbox.w + entity_tile.bbox.w ),
-	  y = -0.5 * ( test_tile.bbox.h + entity_tile.bbox.h )}
-	 local max_box = {
-	  x = 0.5 * ( test_tile.bbox.w + entity_tile.bbox.w ),
-	  y = 0.5 * ( test_tile.bbox.h + entity_tile.bbox.h )}
+	   -- minkowsky sum of test_tile and entity_tile
+	   -- dans le repere centre bbox de la test_entity
+	   local min_box = {
+	    x = -0.5 * ( test_tile.bbox.w + entity_tile.bbox.w ),
+	    y = -0.5 * ( test_tile.bbox.h + entity_tile.bbox.h )}
+	   local max_box = {
+	    x = 0.5 * ( test_tile.bbox.w + entity_tile.bbox.w ),
+	    y = 0.5 * ( test_tile.bbox.h + entity_tile.bbox.h )}
 	  
-	 -- relative position between the centers of entity and test_tile
-	 local rel = { 
-	  x = entity_bbox_center.x - test_tile_bbox_center.x, 
-	  y = entity_bbox_center.y - test_tile_bbox_center.y }
+	   -- position of entity relative to the test_tile center
+	   local rel = { 
+	    x = entity_bbox_center.x - test_tile_bbox_center.x, 
+	    y = entity_bbox_center.y - test_tile_bbox_center.y }
 	 
-	 -- left edge
-	 local ok, tmin = test_wall( min_box.x, rel.x, rel.y, deltap.x, deltap.y, tmin, min_box.y, max_box.y )
-	 if ok then
-	  wall_normal = {x=-1,y=0}
-	  hit_tile_index = {c=t.c,l=t.l}
-	 end
+	   -- left edge
+	   local ok, tmin = test_wall( min_box.x, rel.x, rel.y, deltap.x, deltap.y, tmin, min_box.y, max_box.y )
+	   if ok then
+	    wall_normal = {x=-1,y=0}
+	    hit_tile_index = {c=t.c,l=t.l}
+	   end
 	 
-	 -- right edge
-	 ok, tmin = test_wall( max_box.x, rel.x, rel.y, deltap.x, deltap.y, tmin, min_box.y, max_box.y )
-	 if ok then
-	  wall_normal = {x=1,y=0}
-	  hit_tile_index = {c=t.c,l=t.l}
-	 end
+	   -- right edge
+	   ok, tmin = test_wall( max_box.x, rel.x, rel.y, deltap.x, deltap.y, tmin, min_box.y, max_box.y )
+	   if ok then
+	    wall_normal = {x=1,y=0}
+	    hit_tile_index = {c=t.c,l=t.l}
+	   end
 
-	 -- top edge
-	 ok, tmin = test_wall( min_box.y, rel.y, rel.x, deltap.y, deltap.x, tmin, min_box.x, max_box.x )
-	 if ok then
-	  wall_normal = {x=0,y=-1}
-	  hit_tile_index = {c=t.c,l=t.l}
-	 end
+	   -- top edge
+	   ok, tmin = test_wall( min_box.y, rel.y, rel.x, deltap.y, deltap.x, tmin, min_box.x, max_box.x )
+	   if ok then
+	    wall_normal = {x=0,y=-1}
+	    hit_tile_index = {c=t.c,l=t.l}
+	   end
 	 
-	 -- bottom edge
-	 ok, tmin = test_wall( max_box.y, rel.y, rel.x, deltap.y, deltap.x, tmin, min_box.x, max_box.x )
-	 if ok then
-	  wall_normal = {x=0,y=1}
-	  hit_tile_index = {c=t.c,l=t.l}
-	 end
-	end
-   end
-  end
+	   -- bottom edge
+	   ok, tmin = test_wall( max_box.y, rel.y, rel.x, deltap.y, deltap.x, tmin, min_box.x, max_box.x )
+	   if ok then
+	    wall_normal = {x=0,y=1}
+	    hit_tile_index = {c=t.c,l=t.l}
+	   end
+
+	  end -- if tested tile if collidable
+   end -- foreach tile to test against entity
+  end -- if entity is collidable
  
   -- move to the closest hit location in the desired direction.
   -- if no collisions, move 100% of the way.
-  p.x += tmin + deltap.x
-  p.y += tmin + deltap.y
+  p.x += tmin * deltap.x
+  p.y += tmin * deltap.y
   
   -- if there was a hit, deviate speed and compute remaining delta
   -- to walk, for the next iteration. Else, stop iterating.
@@ -368,9 +378,8 @@ function move_player( p, deltap )
   else
    break
   end
-  
- end -- for 4 iterations
  
+ end -- for 4 iterations 
 end
 
 function update_player( p, dt )
