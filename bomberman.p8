@@ -157,6 +157,7 @@ end
 -- swap X and Y params to test horizontal walls.
 function test_wall( wallx, relx, rely, deltax, deltay, tmin, miny, maxy )
  local ok = false
+ local local_tmin = tmin
  local tepsilon = 0.001
  if deltax ~= 0 then
   -- time of collision. percent of where is the wall
@@ -171,12 +172,12 @@ function test_wall( wallx, relx, rely, deltax, deltay, tmin, miny, maxy )
    if y >= miny and y <= maxy then
     -- clamp tmin to 0 if found a result too close.
     -- avoid collision response if stuck to a wall
-    tmin = max(0,tresult-tepsilon)
+    local_tmin = max(0,tresult-tepsilon)
     ok = true
    end
   end
  end
- return ok, tmin
+ return ok, local_tmin
 end
 
 function move_player( p, deltap )
@@ -193,12 +194,14 @@ function move_player( p, deltap )
  local newp_bbox_ymax = newp.y + entity_tile_bbox.y + entity_tile_bbox.h
  -- note: if a bbox is across 2 pixels, we draw the max, 
  -- which makes the bbox appear 1 pixel larger.
+ --[[
  add(debug_rects,{
   x0 = g_mop.x + flr(newp_bbox_xmin),
   y0 = g_mop.y + flr(newp_bbox_ymin),
   x1 = g_mop.x + flr(newp_bbox_xmax),
   y1 = g_mop.y + flr(newp_bbox_ymax),
   c = 10})
+ ]]
  
  -- get the 4 tiles the player may be in
  -- 1-based 1..13
@@ -237,7 +240,7 @@ function move_player( p, deltap )
      -- test_tile bbox in pixel map space
 	   local test_tile_bbox_center = {
 	   x = g_twp * (t.c-1) + test_tile.bbox.x + 0.5 * test_tile.bbox.w,
-	   y = g_twp * (t.c-1) + test_tile.bbox.y + 0.5 * test_tile.bbox.h}
+	   y = g_twp * (t.l-1) + test_tile.bbox.y + 0.5 * test_tile.bbox.h}
 
 	   --[[ 
      local tile_bbox_xmin = g_twp * (t.c-1) + test_tile.bbox.x
@@ -261,31 +264,35 @@ function move_player( p, deltap )
 	    y = entity_bbox_center.y - test_tile_bbox_center.y }
 	 
 	   -- left edge
-	   local ok, tmin = test_wall( min_box.x, rel.x, rel.y, deltap.x, deltap.y, tmin, min_box.y, max_box.y )
+	   local ok, local_tmin = test_wall( min_box.x, rel.x, rel.y, deltap.x, deltap.y, tmin, min_box.y, max_box.y )
 	   if ok then
 	    wall_normal = {x=-1,y=0}
 	    hit_tile_index = {c=t.c,l=t.l}
+      tmin = local_tmin
 	   end
 	 
 	   -- right edge
-	   ok, tmin = test_wall( max_box.x, rel.x, rel.y, deltap.x, deltap.y, tmin, min_box.y, max_box.y )
+	   ok, local_tmin = test_wall( max_box.x, rel.x, rel.y, deltap.x, deltap.y, tmin, min_box.y, max_box.y )
 	   if ok then
 	    wall_normal = {x=1,y=0}
 	    hit_tile_index = {c=t.c,l=t.l}
+      tmin = local_tmin
 	   end
 
 	   -- top edge
-	   ok, tmin = test_wall( min_box.y, rel.y, rel.x, deltap.y, deltap.x, tmin, min_box.x, max_box.x )
+	   ok, local_tmin = test_wall( min_box.y, rel.y, rel.x, deltap.y, deltap.x, tmin, min_box.x, max_box.x )
 	   if ok then
 	    wall_normal = {x=0,y=-1}
 	    hit_tile_index = {c=t.c,l=t.l}
+      tmin = local_tmin
 	   end
 	 
 	   -- bottom edge
-	   ok, tmin = test_wall( max_box.y, rel.y, rel.x, deltap.y, deltap.x, tmin, min_box.x, max_box.x )
+	   ok, local_tmin = test_wall( max_box.y, rel.y, rel.x, deltap.y, deltap.x, tmin, min_box.x, max_box.x )
 	   if ok then
 	    wall_normal = {x=0,y=1}
 	    hit_tile_index = {c=t.c,l=t.l}
+      tmin = local_tmin
 	   end
 
 	  end -- if tested tile if collidable
