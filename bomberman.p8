@@ -422,7 +422,26 @@ function add_explosion(b)
  sfx(1)
  local intensity = players[b.pi].bomb_intensity
  add(explosions,{x=b.x,y=b.y,pi=b.pi,t=1.5,int=intensity})
+ 
  --destroy_cells
+ local test_tiles_indices = {}
+ local cell_idx = { x = 1 + flr(b.x/g_twp), y = 1 + flr(b.y/g_twp)}
+ for i=1,intensity do
+  local cell_idx_p = { x = min(g_tcc, cell_idx.x + i), y = min(g_tlc, cell_idx.y + i) }
+  local cell_idx_m = { x = max(1,     cell_idx.x - i), y = max(1,     cell_idx.y - i) } 
+  add(test_tiles_indices, ( cell_idx.y - 1 ) * g_tcc + cell_idx_p.x ) -- +x
+  add(test_tiles_indices, ( cell_idx.y - 1 ) * g_tcc + cell_idx_m.x ) -- -x
+  add(test_tiles_indices, ( cell_idx_p.y - 1 ) * g_tcc + cell_idx.x ) -- +y
+  add(test_tiles_indices, ( cell_idx_m.y - 1 ) * g_tcc + cell_idx.x ) -- -y
+ end
+ for ti in all(test_tiles_indices) do
+  local destructible = tiles[maps[1][ti].t].d
+  local hidden_object = maps[1][ti].o
+  if destructible == 1 then
+   maps[1][ti] = {t="floor",o=hidden_object}
+  end
+ end
+ 
  --summon_powerups
 end
 
@@ -441,6 +460,7 @@ end
 
 function update_explosions( dt )
  for e in all(explosions) do
+  -- todo: update anim frame
   e.t -= dt
   if e.t <= 0 then
    del(explosions,e)
@@ -485,11 +505,14 @@ function draw_explosions()
   spr(tiles["fire_center"].idx,ex,ey)
   local dist=1
   while dist < e.int do
+  
+   -- todo: dont show fire if indestructible block or arena limits.
+   
    -- draw fire branched interior
-   spr(tiles["fire_hor"].idx,ex-8*dist,ey) -- left end
-   spr(tiles["fire_hor"].idx,ex+8*dist,ey) -- right end
-   spr(tiles["fire_ver"].idx,ex,ey-8*dist) -- top end
-   spr(tiles["fire_ver"].idx,ex,ey+8*dist) -- bottom end
+   spr(tiles["fire_hor"].idx,ex-8*dist,ey) -- left
+   spr(tiles["fire_hor"].idx,ex+8*dist,ey) -- right
+   spr(tiles["fire_ver"].idx,ex,ey-8*dist) -- top
+   spr(tiles["fire_ver"].idx,ex,ey+8*dist) -- bottom
    dist += 1
   end
   --draw fire branches end
