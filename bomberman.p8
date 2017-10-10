@@ -27,7 +27,7 @@ function init_tiles()
  --       x+(w-1) and y+(h-1) gives the coords of top-left of the max pixels.
  tiles["player"] = {idx=0,tag=1,d=0,bbox={x=2,y=5,w=3.9,h=2.9}}
  tiles["wall"] = {idx=48,tag=1,d=1,bbox={x=1,y=1,w=6,h=6}}
- tiles["floor"] = {idx=49,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
+ tiles["floor"] = {idx=49,tag=0,d=1,bbox={x=0,y=0,w=8,h=8}}
  tiles["wood_plot"] = {idx=35,tag=1,d=1,bbox={x=1.5,y=0,w=5,h=7}}
  tiles["hard_wall"] = {idx=36,tag=1,d=0,bbox={x=0,y=0,w=8,h=8}}
  
@@ -352,7 +352,7 @@ function update_player( p, dt )
  if ( btn( 3, i ) ) acc.y += 1
  
  if ( btnp( 4, i ) ) drop_bomb( p )
- --if ( btnp( 5, i ) ) p.bomb_intensity += 1
+ if ( btnp( 5, i ) ) p.bomb_intensity += 1
  
  --if ( btn( 0, 1 ) ) extcmd("rec")
  --if ( btn( 1, 1 ) ) extcmd("video")
@@ -499,27 +499,99 @@ end
 
 -- todo(nfauvet): clamp
 function draw_explosions()
+ local draw_items = {} -- i,x,y
  for e in all(explosions) do
-  local ex = g_mop.x + e.x
-  local ey = g_mop.y + e.y
-  spr(tiles["fire_center"].idx,ex,ey)
+  local middle_index = {c=1+flr(e.x/g_twp),l=1+flr(e.y/g_twp)}
+  add( draw_items, {i=tiles["fire_center"].idx,x=e.x,y=e.y} )
+  
   local dist=1
   while dist < e.int do
   
-   -- todo: dont show fire if indestructible block or arena limits.
+   -- left
+   local coords = {x=e.x-g_twp*dist,y=e.y}
+   local index = { c = middle_index.c - dist, l = middle_index.l }
+   local tile = get_tile(index.c, index.l)
+   if tile.d == 1 then
+    add(draw_items, {i=tiles["fire_hor"].idx,x=coords.x,y=coords.y})
+   end
+   
+   -- right
+   coords = {x=e.x+g_twp*dist,y=e.y}
+   index = { c = middle_index.c + dist, l = middle_index.l }
+   tile = get_tile(index.c, index.l)
+   if tile.d == 1 then
+    add(draw_items, {i=tiles["fire_hor"].idx,x=coords.x,y=coords.y})
+   end
+   
+   -- top
+   coords = {x=e.x,y=e.y-g_twp*dist}
+   index = { c = middle_index.c, l = middle_index.l - dist}
+   tile = get_tile(index.c, index.l)
+   if tile.d == 1 then
+    add(draw_items, {i=tiles["fire_ver"].idx,x=coords.x,y=coords.y})
+   end
+   
+   -- bottom
+   coords = {x=e.x,y=e.y+g_twp*dist}
+   index = { c = middle_index.c, l = middle_index.l + dist}
+   tile = get_tile(index.c, index.l)
+   if tile.d == 1 then
+    add(draw_items, {i=tiles["fire_ver"].idx,x=coords.x,y=coords.y})
+   end
    
    -- draw fire branched interior
-   spr(tiles["fire_hor"].idx,ex-8*dist,ey) -- left
-   spr(tiles["fire_hor"].idx,ex+8*dist,ey) -- right
-   spr(tiles["fire_ver"].idx,ex,ey-8*dist) -- top
-   spr(tiles["fire_ver"].idx,ex,ey+8*dist) -- bottom
+   --spr(tiles["fire_hor"].idx,ex-8*dist,ey) -- left
+   --spr(tiles["fire_hor"].idx,ex+8*dist,ey) -- right
+   --spr(tiles["fire_ver"].idx,ex,ey-8*dist) -- top
+   --spr(tiles["fire_ver"].idx,ex,ey+8*dist) -- bottom
+   
    dist += 1
   end
+  
+  
+  -- left
+   local coords = {x=e.x-g_twp*dist,y=e.y}
+   local index = { c = middle_index.c - dist, l = middle_index.l }
+   local tile = get_tile(index.c, index.l)
+   if tile.d == 1 then
+    add(draw_items, {i=tiles["fire_left_end"].idx,x=coords.x,y=coords.y})
+   end
+   
+   -- right
+   coords = {x=e.x+g_twp*dist,y=e.y}
+   index = { c = middle_index.c + dist, l = middle_index.l }
+   tile = get_tile(index.c, index.l)
+   if tile.d == 1 then
+    add(draw_items, {i=tiles["fire_right_end"].idx,x=coords.x,y=coords.y})
+   end
+   
+   -- top
+   coords = {x=e.x,y=e.y-g_twp*dist}
+   index = { c = middle_index.c, l = middle_index.l - dist}
+   tile = get_tile(index.c, index.l)
+   if tile.d == 1 then
+    add(draw_items, {i=tiles["fire_top_end"].idx,x=coords.x,y=coords.y})
+   end
+   
+   -- bottom
+   coords = {x=e.x,y=e.y+g_twp*dist}
+   index = { c = middle_index.c, l = middle_index.l + dist}
+   tile = get_tile(index.c, index.l)
+   if tile.d == 1 then
+    add(draw_items, {i=tiles["fire_bottom_end"].idx,x=coords.x,y=coords.y})
+   end
+   
+  
+  
   --draw fire branches end
-  spr(tiles["fire_left_end"].idx,ex-8*dist,ey) -- left end
-  spr(tiles["fire_right_end"].idx,ex+8*dist,ey) -- right end
-  spr(tiles["fire_top_end"].idx,ex,ey-8*dist) -- top end
-  spr(tiles["fire_bottom_end"].idx,ex,ey+8*dist) -- bottom end
+  --spr(tiles["fire_left_end"].idx,ex-8*dist,ey) -- left end
+  --spr(tiles["fire_right_end"].idx,ex+8*dist,ey) -- right end
+  --spr(tiles["fire_top_end"].idx,ex,ey-8*dist) -- top end
+  --spr(tiles["fire_bottom_end"].idx,ex,ey+8*dist) -- bottom end
+ end
+ 
+ for di in all( draw_items ) do
+  spr( di.i, g_mop.x + di.x, g_mop.y + di.y )
  end
 end
 
