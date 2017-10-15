@@ -31,7 +31,7 @@ function init_tiles()
  tiles["player"] = {idx=0,tag=1,d=0,bbox={x=2,y=5,w=3.9,h=2.9}}
  
  tiles["wall"] = {idx=48,tag=1,d=1,bbox={x=1,y=1,w=6,h=6}}
- tiles["floor"] = {idx=49,tag=0,d=1,bbox={x=0,y=0,w=8,h=8}}
+ tiles["floor"] = {idx=49,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["wood_plot"] = {idx=35,tag=1,d=1,bbox={x=1.5,y=0,w=5,h=7}}
  tiles["hard_wall"] = {idx=36,tag=1,d=0,bbox={x=0,y=0,w=8,h=8}}
  
@@ -485,14 +485,25 @@ function update_explosions( dt )
      local tc = middle_idx.c + i * d.c
      local tl = middle_idx.l + i * d.l
      local tile = get_tile(tc, tl)
-     if tile.tag == 1 then -- collides?
-      if tile.d == 1 then -- destructible?
-       local ti = get_tile_index(tc,tl)
-       local hidden_object = maps[1][ti].o
-       maps[1][ti] = {t="floor",o=hidden_object}
-      end
-      break -- collides = stop fire spreading
+     local ti = get_tile_index(tc,tl)
+     if ti == -1 then
+      break
      end
+     local hidden_object = maps[1][ti].o
+      
+     if tile.d == 1 then -- destructible?
+      maps[1][ti] = {t="floor",o=hidden_object}
+      break -- destroy breakable = stop fire spreading
+     else
+      if tile.tag == 1 then -- collides? (indestructible walls)
+       break -- collides wall = stop fire spreading
+      else
+       if hidden_object ~= 0 then
+        maps[1][ti].o = 0 -- destroy powerup
+        break
+       end
+      end
+     end 
     end
    end
    
@@ -555,6 +566,8 @@ function draw_explosions()
     local tl = middle_idx.l + i * d.l
     local tile = get_tile(tc, tl)
     local coords = {x=e.x+d.c*g_twp*i,y=e.y+d.l*g_twp*i}
+    -- todo: test tile valid
+    -- todo change test order to destroy powerups.
     if tile.tag == 1 then -- collides?
      if tile.d == 1 then -- destructible?
       add(draw_items, {i=tiles["block_expl"].idx,x=coords.x,y=coords.y})
