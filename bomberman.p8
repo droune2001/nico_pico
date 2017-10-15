@@ -6,6 +6,7 @@ bombs={}
 explosions={}
 tiles={} -- tile map by name, stores id, bbox and flags.
 maps={}
+powerups={}
 debug_rects={} -- map space pixels {x0,y0,x1,y1,color}
 
 g_nb_players = 4
@@ -25,14 +26,20 @@ function init_tiles()
  -- bbox: x/y coordinates are top-left integer coords of pixels
  --       x+w and y+h gives the end of the bbox
  --       x+(w-1) and y+(h-1) gives the coords of top-left of the max pixels.
+ tiles["exterior_wall"] = {idx=-1,tag=1,d=0,bbox={x=0,y=0,w=8,h=8}} -- fake tile that acts like a wall
+ 
  tiles["player"] = {idx=0,tag=1,d=0,bbox={x=2,y=5,w=3.9,h=2.9}}
+ 
  tiles["wall"] = {idx=48,tag=1,d=1,bbox={x=1,y=1,w=6,h=6}}
  tiles["floor"] = {idx=49,tag=0,d=1,bbox={x=0,y=0,w=8,h=8}}
  tiles["wood_plot"] = {idx=35,tag=1,d=1,bbox={x=1.5,y=0,w=5,h=7}}
  tiles["hard_wall"] = {idx=36,tag=1,d=0,bbox={x=0,y=0,w=8,h=8}}
  
- tiles["exterior_wall"] = {idx=-1,tag=1,d=0,bbox={x=0,y=0,w=8,h=8}} -- fake tile that acts like a wall
+ tiles["pu_bomb"] = {idx=16,tag=0,d=1,bbox={x=0,y=0,w=8,h=8}}
+ tiles["pu_speed"] = {idx=17,tag=0,d=1,bbox={x=0,y=0,w=8,h=8}}
+ tiles["pu_fire"] = {idx=18,tag=0,d=1,bbox={x=0,y=0,w=8,h=8}}
  
+ tiles["block_expl"] = {idx=59,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["fire_center"] = {idx=44,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["fire_hor"] = {idx=45,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["fire_ver"] = {idx=28,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
@@ -40,6 +47,12 @@ function init_tiles()
  tiles["fire_right_end"] = {idx=46,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["fire_top_end"] = {idx=12,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["fire_bottom_end"] = {idx=60,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
+end
+
+function init_powerups()
+ add(powerups, {t="pu_bomb"})
+ add(powerups, {t="pu_speed"})
+ add(powerups, {t="pu_fire"})
 end
 
 function is_starting_player_area(l,c)
@@ -71,8 +84,8 @@ function init_map()
    else
     local is_there_a_tile = ( 2 > rnd(3) )
     if is_there_a_tile then
-     local rnd_object = flr(rnd(12) - 8) -- 3/4 chance to have 0, then 1,2,3,4
-	    if rnd(2) > 1 then
+     local rnd_object = max(0,flr(rnd(12) - 8.5)) -- 3/4 chance to have 0, then 1,2,3
+     if rnd(2) > 1 then
 	     map0[ti] = {t="wall",o=rnd_object} -- hide a random object inside the block.
 	    else
 	     map0[ti] = {t="wood_plot",o=rnd_object}
@@ -137,8 +150,13 @@ function create_player( index )
  p.spr_index = tiles["player"].idx -- note: tiles must be init
  p.has_bombs_left = 10
  p.bomb_intensity = 1
- p.speed = 200
- p.drag = 8
+ -- normal: 200 8
+ -- fast: 400 10
+ -- faster: 800 14
+ -- fastest: 1600 22
+ -- formulae = 2^(powerup)*base, base+2^pu
+ p.speed = 1600
+ p.drag = 22
  p.dx = 0
  p.dy = 0
  p.tag = 0
@@ -159,6 +177,7 @@ end
 
 function _init()
  --music(0)
+ init_powerups()
  init_tiles()
  init_map()
  init_players()
@@ -173,6 +192,15 @@ function get_tile(c,l)
   return tiles["exterior_wall"]
  else
   return tiles[maps[1][(l-1)*g_tcc+c].t]
+ end
+end
+
+function get_tile_index(c,l)
+ if c < 1 or c > g_tcc or l < 1 or l > g_tlc then
+  return -1 -- todo: see what we can return.
+  -- or better, assert.
+ else
+  return (l-1)*g_tcc+c
  end
 end
 
@@ -419,30 +447,9 @@ function update_players( dt )
 end
 
 function add_explosion(b)
- sfx(1)
+ --sfx(1)
  local intensity = players[b.pi].bomb_intensity
  add(explosions,{x=b.x,y=b.y,pi=b.pi,t=1.5,int=intensity})
- 
- --destroy_cells
- local test_tiles_indices = {}
- local cell_idx = { x = 1 + flr(b.x/g_twp), y = 1 + flr(b.y/g_twp)}
- for i=1,intensity do
-  local cell_idx_p = { x = min(g_tcc, cell_idx.x + i), y = min(g_tlc, cell_idx.y + i) }
-  local cell_idx_m = { x = max(1,     cell_idx.x - i), y = max(1,     cell_idx.y - i) } 
-  add(test_tiles_indices, ( cell_idx.y - 1 ) * g_tcc + cell_idx_p.x ) -- +x
-  add(test_tiles_indices, ( cell_idx.y - 1 ) * g_tcc + cell_idx_m.x ) -- -x
-  add(test_tiles_indices, ( cell_idx_p.y - 1 ) * g_tcc + cell_idx.x ) -- +y
-  add(test_tiles_indices, ( cell_idx_m.y - 1 ) * g_tcc + cell_idx.x ) -- -y
- end
- for ti in all(test_tiles_indices) do
-  local destructible = tiles[maps[1][ti].t].d
-  local hidden_object = maps[1][ti].o
-  if destructible == 1 then
-   maps[1][ti] = {t="floor",o=hidden_object}
-  end
- end
- 
- --summon_powerups
 end
 
 function update_bombs( dt )
@@ -463,6 +470,32 @@ function update_explosions( dt )
   -- todo: update anim frame
   e.t -= dt
   if e.t <= 0 then
+   --destroy_cells
+   local test_tiles_indices = {}
+   local middle_idx = {c = 1 + flr(e.x/g_twp), l = 1 + flr(e.y/g_twp)}
+   local dirs = {
+    {c= 1, l= 0},  -- +x
+    {c=-1, l= 0}, -- -x
+    {c= 0, l= 1},  -- +y
+    {c= 0, l=-1}} -- -y
+   
+   -- for each direction of the fire
+   for d in all(dirs) do
+    for i=1,e.int do
+     local tc = middle_idx.c + i * d.c
+     local tl = middle_idx.l + i * d.l
+     local tile = get_tile(tc, tl)
+     if tile.tag == 1 then -- collides?
+      if tile.d == 1 then -- destructible?
+       local ti = get_tile_index(tc,tl)
+       local hidden_object = maps[1][ti].o
+       maps[1][ti] = {t="floor",o=hidden_object}
+      end
+      break -- collides = stop fire spreading
+     end
+    end
+   end
+   
    del(explosions,e)
   end
  end
@@ -486,7 +519,13 @@ function draw_map()
  for l=1,g_tlc do
    for c=1,g_tcc do
      local i=(l-1)*g_tcc+c
-     spr(tiles[maps[cm][i].t].idx, g_mop.x + g_twp*(c-1), g_mop.y + g_twp*(l-1))
+     local tilename = maps[cm][i].t
+     local object = maps[cm][i].o
+     spr(tiles[tilename].idx, g_mop.x + g_twp*(c-1), g_mop.y + g_twp*(l-1))
+     
+     if tilename == "floor" and object > 0 then
+      spr(tiles[powerups[object].t].idx, g_mop.x + g_twp*(c-1), g_mop.y + g_twp*(l-1))
+     end
    end
  end
 end
@@ -497,98 +536,41 @@ function draw_bombs()
  end
 end
 
--- todo(nfauvet): clamp
 function draw_explosions()
  local draw_items = {} -- i,x,y
  for e in all(explosions) do
-  local middle_index = {c=1+flr(e.x/g_twp),l=1+flr(e.y/g_twp)}
+  local middle_idx = {c=1+flr(e.x/g_twp),l=1+flr(e.y/g_twp)}
   add( draw_items, {i=tiles["fire_center"].idx,x=e.x,y=e.y} )
   
-  local dist=1
-  while dist < e.int do
-  
-   -- left
-   local coords = {x=e.x-g_twp*dist,y=e.y}
-   local index = { c = middle_index.c - dist, l = middle_index.l }
-   local tile = get_tile(index.c, index.l)
-   if tile.d == 1 then
-    add(draw_items, {i=tiles["fire_hor"].idx,x=coords.x,y=coords.y})
+  local dirs = {
+   {c= 1, l= 0, tm="fire_hor", te="fire_right_end"},  -- +x
+   {c=-1, l= 0, tm="fire_hor", te="fire_left_end"}, -- -x
+   {c= 0, l= 1, tm="fire_ver", te="fire_bottom_end"},  -- +y
+   {c= 0, l=-1, tm="fire_ver", te="fire_top_end"}} -- -y
+   
+  -- for each direction of the fire
+  for d in all(dirs) do
+   for i=1,e.int do
+    local tc = middle_idx.c + i * d.c
+    local tl = middle_idx.l + i * d.l
+    local tile = get_tile(tc, tl)
+    local coords = {x=e.x+d.c*g_twp*i,y=e.y+d.l*g_twp*i}
+    if tile.tag == 1 then -- collides?
+     if tile.d == 1 then -- destructible?
+      add(draw_items, {i=tiles["block_expl"].idx,x=coords.x,y=coords.y})
+     end
+     break -- collides = stop fire spreading
+    else
+     if i == e.int then
+      add(draw_items, {i=tiles[d.te].idx,x=coords.x,y=coords.y})
+     else
+      add(draw_items, {i=tiles[d.tm].idx,x=coords.x,y=coords.y})
+     end
+    end
    end
-   
-   -- right
-   coords = {x=e.x+g_twp*dist,y=e.y}
-   index = { c = middle_index.c + dist, l = middle_index.l }
-   tile = get_tile(index.c, index.l)
-   if tile.d == 1 then
-    add(draw_items, {i=tiles["fire_hor"].idx,x=coords.x,y=coords.y})
-   end
-   
-   -- top
-   coords = {x=e.x,y=e.y-g_twp*dist}
-   index = { c = middle_index.c, l = middle_index.l - dist}
-   tile = get_tile(index.c, index.l)
-   if tile.d == 1 then
-    add(draw_items, {i=tiles["fire_ver"].idx,x=coords.x,y=coords.y})
-   end
-   
-   -- bottom
-   coords = {x=e.x,y=e.y+g_twp*dist}
-   index = { c = middle_index.c, l = middle_index.l + dist}
-   tile = get_tile(index.c, index.l)
-   if tile.d == 1 then
-    add(draw_items, {i=tiles["fire_ver"].idx,x=coords.x,y=coords.y})
-   end
-   
-   -- draw fire branched interior
-   --spr(tiles["fire_hor"].idx,ex-8*dist,ey) -- left
-   --spr(tiles["fire_hor"].idx,ex+8*dist,ey) -- right
-   --spr(tiles["fire_ver"].idx,ex,ey-8*dist) -- top
-   --spr(tiles["fire_ver"].idx,ex,ey+8*dist) -- bottom
-   
-   dist += 1
   end
-  
-  
-  -- left
-   local coords = {x=e.x-g_twp*dist,y=e.y}
-   local index = { c = middle_index.c - dist, l = middle_index.l }
-   local tile = get_tile(index.c, index.l)
-   if tile.d == 1 then
-    add(draw_items, {i=tiles["fire_left_end"].idx,x=coords.x,y=coords.y})
-   end
-   
-   -- right
-   coords = {x=e.x+g_twp*dist,y=e.y}
-   index = { c = middle_index.c + dist, l = middle_index.l }
-   tile = get_tile(index.c, index.l)
-   if tile.d == 1 then
-    add(draw_items, {i=tiles["fire_right_end"].idx,x=coords.x,y=coords.y})
-   end
-   
-   -- top
-   coords = {x=e.x,y=e.y-g_twp*dist}
-   index = { c = middle_index.c, l = middle_index.l - dist}
-   tile = get_tile(index.c, index.l)
-   if tile.d == 1 then
-    add(draw_items, {i=tiles["fire_top_end"].idx,x=coords.x,y=coords.y})
-   end
-   
-   -- bottom
-   coords = {x=e.x,y=e.y+g_twp*dist}
-   index = { c = middle_index.c, l = middle_index.l + dist}
-   tile = get_tile(index.c, index.l)
-   if tile.d == 1 then
-    add(draw_items, {i=tiles["fire_bottom_end"].idx,x=coords.x,y=coords.y})
-   end
-   
-  
-  
-  --draw fire branches end
-  --spr(tiles["fire_left_end"].idx,ex-8*dist,ey) -- left end
-  --spr(tiles["fire_right_end"].idx,ex+8*dist,ey) -- right end
-  --spr(tiles["fire_top_end"].idx,ex,ey-8*dist) -- top end
-  --spr(tiles["fire_bottom_end"].idx,ex,ey+8*dist) -- bottom end
  end
+ 
  
  for di in all( draw_items ) do
   spr( di.i, g_mop.x + di.x, g_mop.y + di.y )
@@ -711,38 +693,38 @@ function _draw()
 end
 
 __gfx__
-0007850058000000000000850058700000000000000000009e84d4dedddddddd0000000000000000000000000000000000000000000000000000000000000000
-0777777007777700007777700777777000000000000000004d39e9e3666666660000000000000000000000000000000008888880000000000000000000000000
-777777677777777007777777776666670000000000000000e84d3d39666666660000000000000000000000000000000008999980000000000000000000000000
-777676767777424004247777742442460000000000000000111111116666666600000000000000000000000000000000089aa980000000000000000000000000
-7777676677679df00fd9767779dffd960000000000000000666666661111111100000000000000000000000000000000089aa980000000000000000000000000
+0007850058000000000000850058700000000000000000009e84d4dedddddddd0000000000000000000000000000000000008000000000000000000000000000
+0777777007777700007777700777777000000000000000004d39e9e3666666660000000000000000000000000000000080889800000000000000000000000000
+777777677777777007777777776666670000000000000000e84d3d39666666660000000000000000000000000000000008a99980000000000000000000000000
+777676767777424004247777742442460000000000000000111111116666666600000000000000000000000000000000899aa980000000000000000000000000
+7777676677679df00fd9767779dffd9600000000000000006666666611111111000000000000000000000000000000000089a800000000000000000000000000
 076666600776666006666770077777700000000000000000666666669e84d4de00000000000000000000000000000000089aa980000000000000000000000000
-0ecccce000ecce0000ecce000ecccce00000000000000000666666664d39e9e300000000000000000000000000000000089aa980000000000000000000000000
+0ecccce000ecce0000ecce000ecccce00000000000000000666666664d39e9e3000000000000000000000000000000000089aa98000000000000000000000000
 004114000004040000404000004114000000000000000000dddddddde84d3d3900000000000000000000000000000000089aa980000000000000000000000000
-00000000000000000000000000000000000000004de9ed396666666666666666666666669ed394de0000000000000000089aa980000000000000000000000000
-00000000000000000000000000000000000000009e34de4d6666666666666666666666664de4d9e30000000000000000089aa980000000000000000000000000
-0000000000000000000000000000000000000000d39e838966dddddddddddddddddddd66e8389d390000000000000000089aa980000000000000000000000000
-0000000000000000000000000000000000000000e4d1111166d141244214124221241d6611111e4d0000000000000000089aa980000000000000000000000000
-00000000000000000000000000000000000000003891666666d4aa00aa00aa00aa002d66666613890000000000000000089aa980000000000000000000000000
-00000000000000000000000000000000000000009e81666666d2a00aa00aa00aa00a4d66666619e80000000000000000089aa980000000000000000000000000
-00000000000000000000000000000000000000004d31666666d400aa00aa00aa00aa2d66666614d30000000000000000089aa980000000000000000000000000
-0000000000000000000000000000000000000000e841666d66d10aa00aa00aa00aa04d66d6661e840000000000000000089aa980000000000000000000000000
-000400000080800075f7d6f66d7ffd66766666654de1666d66d1aa00aa00aa00aa002d66d66614de0000000000000800089aa980000000000000000000000000
-00004000889898886777776566ffff66776666519e31666d66d2a00aa00aa00aa00a1d66d66619e300000000008089808999a998888888888888888800000000
-0075550099a9a999d76666d1669ff46677766d11d391666d66d400aa00aa00aa00aa2d66d6661d39000000000898999899a9aa99999999999999999800000000
-00555520aaaaaaaaf76666d1664442f67766dd11e4d1666d66d20aa00aa00aa00aa04d66d6661e4d0000000089a9aaaaaaaaa99aaaaaaaaaaaaaaa9800000000
-00552210aaaaaaaa57666dd17f44246d776ddd113891666d66d4aa00aa00aa00aa001d66d666138900000000899aa9a9a99aaaaaaaaaaaaaaaaaaa9800000000
-000111009a9a99a97766ddd16644421677dddd119e81666d66d1a00aa00aa00aa00a4d66d66619e80000000008a9989999aa9a99999999999999999800000000
-0000000089889898f6dddd516d442111751111114d31666d66d200aa00aa00aa00aa2d66d66614d30000000008988088899a9998888888888888888800000000
-000000000800808065111111676d111151111111e841666d66d40aa00aa00aa00aa04d66d6661e840000000080800000089aa980000000000000000000000000
-35f7d6f66d667d668888888852222225000000009e81666d66d2aa00aa00aa00aa002d66d66619e80000000000000000089aa980000000000000000000000000
-67777763666f66668eeeee281555555d000000004d31666666d4a00aa00aa00aa00a4d66666614d30000000000000000089a9800000000000000000000000000
-d76666d16676f6668eeee2e81555555d00000000e841666666d100aa00aa00aa00aa1d6666661e8400000000000000000089a980000000000000000000000000
-f76666d1666666f68eee2ee81555555d000000009e81666666d20aa00aa00aa00aa04d66666619e8000000000000000000089a88000000000000000000000000
-57666dd17f6f666d8ee2eee81555555d000000004d31111166d142141424124241241d66111114d300000000000000000089a980000000000000000000000000
-3766ddd1d66676668e2eeee81555555d000000009e8e89e866dddddddddddddddddddd66e89e89e80000000000000000089a9800000000000000000000000000
-f6dddd5166f6666f82eeeee81555555d000000004d3d34d3666666666666666666666666d34d34d300000000000000008089a900000000000000000000000000
-63111111666d6f66888888885333333500000000e8484e8466666666666666666666666684e84e84000000000000000000088080000000000000000000000000
+07e8888007b3333007a9999000000000000000004de9ed396666666666666666666666669ed394de0000000000000000089aa980000000000000000000000000
+72222228711111137444444900000000000000009e34de4d6666666666666666666666664de4d9e300000000000000000089aa98000000000000000000000000
+e2e55548b1baa993a43b3aa90000000000000000d39e838966dddddddddddddddddddd66e8389d390000000000000000089aa980000000000000000000000000
+8257552831aa99b394bbb3a90000000000000000e4d1111166d141244214124221241d6611111e4d0000000000000000089aa980000000000000000000000000
+8255521831baaa93943b3b3900000000000000003891666666d4aa00aa00aa00aa002d6666661389000000000000000089aa9800000000000000000000000000
+8252221831bba9b394a3bbb900000000000000009e81666666d2a00aa00aa00aa00a4d66666619e80000000000000000089aa980000000000000000000000000
+82e111e831ba9bb394aa3b3900000000000000004d31666666d400aa00aa00aa00aa2d66666614d300000000000000000089aa98000000000000000000000000
+0888888003333330099999900000000000000000e841666d66d10aa00aa00aa00aa04d66d6661e840000000000000000089aa980000000000000000000000000
+0000f4000080800075f7d6f66d7ffd66766666654de1666d66d1aa00aa00aa00aa002d66d66614de0000000000000800089aa980000080000080000000000000
+00554100889898886777776566ffff66776666519e31666d66d2a00aa00aa00aa00a1d66d66619e300000000008089808999a998808898080898080000000000
+0575552099a9a999d76666d1669ff46677766d11d391666d66d400aa00aa00aa00aa2d66d6661d39000000000898999899a9aa999899a9898999898000000000
+05555220aaaaaaaaf76666d1664442f67766dd11e4d1666d66d20aa00aa00aa00aa04d66d6661e4d0000000089a9aaaaaaaaa99aa9aaaa9aaaaa9a9800000000
+05552210aaaaaaaa57666dd17f44246d776ddd113891666d66d4aa00aa00aa00aa001d66d666138900000000899aa9a9a99aaaaaaaaa9aaa9a9aa99800000000
+022221109a9a99a97766ddd16644421677dddd119e81666d66d1a00aa00aa00aa00a4d66d66619e80000000008a9989999aa9a999a9989a999999a8000000000
+0021110089889898f6dddd516d442111751111114d31666d66d200aa00aa00aa00aa2d66d66614d30000000008988088899a9998898808988898898000000000
+000000000800808065111111676d111151111111e841666d66d40aa00aa00aa00aa04d66d6661e840000000080800000089aa980080000800080080800000000
+35f7d6f66d667d668888888852222225800d80009e81666d66d2aa00aa00aa00aa002d66d66619e800000000800d8000089aa980000000000000000000000000
+67777763666f66668eeeee281555555d090900004d31666666d4a00aa00aa00aa00a4d66666614d30000000009090000089a9800000000000000000000000000
+d76666d16676f6668eeee2e81555555d0daa90d8e841666666d100aa00aa00aa00aa1d6666661e84000000000daa90d80089a980000000000000000000000000
+f76666d1666666f68eee2ee81555555d9d9a9a909e81666666d20aa00aa00aa00aa04d66666619e8000000009d9a9a9000089a88000000000000000000000000
+57666dd17f6f666d8ee2eee81555555d80adda094d31111166d142141424124241241d66111114d30000000080adda090089a980000000000000000000000000
+3766ddd1d66676668e2eeee81555555d0a98a9809e8e89e866dddddddddddddddddddd66e89e89e8000000000a98a980089a9800000000000000000000000000
+f6dddd5166f6666f82eeeee81555555d98000d004d3d34d3666666666666666666666666d34d34d30000000098000d008089a900000000000000000000000000
+63111111666d6f6688888888533333350d008a90e8484e8466666666666666666666666684e84e84000000000d008a9000088080000000000000000000000000
 aa00aa00aa00aa00aa00aa000000000000000000000000000000000000000000000000000000000000000000000000000000000000e888000008000000e88880
 a00aa00aa00aa00aa00aa00a000000000000000000000000000000000000000000000000000000000000000000000000000000000e7e8880077777700e888888
 00aa00aa00aa00aa00aa00aa0000000000000000000000000000000000000000000000000000000000000000000000000000000008e2f28007f5f57008f2ff28
