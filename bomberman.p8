@@ -15,6 +15,14 @@ g_mop = {x=12,y=12} -- global map offsets in pixels
 g_tlc = 13 -- global number of tile lines
 g_tcc = 13 -- global number of tile columns
 
+g_pu_bomb = 1
+g_pu_speed = 2
+g_pu_fire = 3
+
+g_max_pu_bomb = 5
+g_max_pu_speed = 3
+g_max_pu_fire = 12 -- maybe have a non-linear progress? quadratic?
+
 --
 -- init/create
 --
@@ -148,15 +156,16 @@ function create_player( index )
  p.x = player_starting_position(index).x -- in pixel map space [0..12*8=96]
  p.y = player_starting_position(index).y
  p.spr_index = tiles["player"].idx -- note: tiles must be init
- p.has_bombs_left = 10
+ p.pu = {b=0,s=0,f=0} -- bomb, speed, fire
+ p.has_bombs_left = 1
  p.bomb_intensity = 1
  -- normal: 200 8
  -- fast: 400 10
  -- faster: 800 14
  -- fastest: 1600 22
  -- formulae = 2^(powerup)*base, base+2^pu
- p.speed = 1600
- p.drag = 22
+ p.speed = 200
+ p.drag = 8
  p.dx = 0
  p.dy = 0
  p.tag = 0
@@ -232,7 +241,32 @@ function test_wall( wallx, relx, rely, deltax, deltay, tmin, miny, maxy )
 end
 
 function give_pu_to_player( pu, p )
-
+ if pu == g_pu_bomb then
+  if p.pu.b < g_max_pu_bomb then
+   p.pu.b += 1
+   p.has_bombs_left += 1
+  end
+ elseif pu == g_pu_speed then
+  if p.pu.s < g_max_pu_speed then
+   p.pu.s += 1
+   local speeds_drags = {
+    {s=400,d=10},
+    {s=800,d=14},
+    {s=1600,d=22}}
+   p.speed = speeds_drags[p.pu.s].s
+   p.drag = speeds_drags[p.pu.s].d
+  end
+ elseif pu == g_pu_fire then
+  if p.pu.b < g_max_pu_fire then
+   p.pu.f += 1
+   p.bomb_intensity += 1
+  end
+ end
+ -- normal: 200 8
+ -- fast: 400 10
+ -- faster: 800 14
+ -- fastest: 1600 22
+ -- formulae = 2^(powerup)*base, base+2^pu
 end
 
 function pick_pu_under_player( p )
