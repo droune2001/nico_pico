@@ -449,7 +449,7 @@ end
 function add_explosion(b)
  --sfx(1)
  local intensity = players[b.pi].bomb_intensity
- add(explosions,{x=b.x,y=b.y,pi=b.pi,t=1.5,int=intensity})
+ add(explosions,{x=b.x,y=b.y,pi=b.pi,t=1.2,int=intensity})
 end
 
 function update_bombs( dt )
@@ -459,8 +459,6 @@ function update_bombs( dt )
    add_explosion(b)
    players[b.pi].has_bombs_left += 1
    del(bombs,b)
-   -- handle destruction of cells here?
-   -- summoning of powerups?
   end
  end
 end
@@ -473,10 +471,17 @@ function update_explosions( dt )
    --destroy_cells
    local test_tiles_indices = {}
    local middle_idx = {c = 1 + flr(e.x/g_twp), l = 1 + flr(e.y/g_twp)}
+   local middle_ti = get_tile_index(middle_idx.c, middle_idx.l)
+   -- destroy powerup under bomb
+   local pu_under_bomb = maps[1][middle_ti].o
+   if hidden_object ~= 0 then
+    maps[1][middle_ti].o = 0 -- destroy powerup
+   end
+   
    local dirs = {
-    {c= 1, l= 0},  -- +x
+    {c= 1, l= 0}, -- +x
     {c=-1, l= 0}, -- -x
-    {c= 0, l= 1},  -- +y
+    {c= 0, l= 1}, -- +y
     {c= 0, l=-1}} -- -y
    
    -- for each direction of the fire
