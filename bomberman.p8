@@ -231,6 +231,25 @@ function test_wall( wallx, relx, rely, deltax, deltay, tmin, miny, maxy )
  return ok, local_tmin
 end
 
+function give_pu_to_player( pu, p )
+
+end
+
+function pick_pu_under_player( p )
+ local entity_tile = tiles["player"]
+ local entity_tile_bbox = entity_tile.bbox 
+ local entity_bbox_center = {
+   x = p.x + entity_tile_bbox.x + 0.5 * entity_tile_bbox.w,
+   y = p.y + entity_tile_bbox.y + 0.5 * entity_tile_bbox.h}
+ local ti_ = { c = 1 + flr(entity_bbox_center.x/g_twp), l = 1 + flr(entity_bbox_center.y/g_twp)}
+ local ti = get_tile_index(ti_.c, ti_.l)
+ local pu_under_player = maps[1][ti].o
+   if pu_under_player ~= 0 then
+    give_pu_to_player(pu_under_player,p)
+    maps[1][ti].o = 0 -- destroy powerup
+   end
+end
+
 function move_player( p, deltap )
  
  -- todo: not necessarily "player" in fact... bomb slide, enemies
@@ -418,6 +437,9 @@ function update_player( p, dt )
  -- collide and sweep  
  move_player( p, deltap )
  
+ -- try to pick up
+ pick_pu_under_player( p )
+ 
  -- update facing direction
  if p.dx == 0 and p.dy == 0 then
   -- leave as it is
@@ -474,7 +496,7 @@ function update_explosions( dt )
    local middle_ti = get_tile_index(middle_idx.c, middle_idx.l)
    -- destroy powerup under bomb
    local pu_under_bomb = maps[1][middle_ti].o
-   if hidden_object ~= 0 then
+   if pu_under_bomb ~= 0 then
     maps[1][middle_ti].o = 0 -- destroy powerup
    end
    
