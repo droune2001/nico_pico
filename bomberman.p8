@@ -449,7 +449,7 @@ end
 function add_explosion(b)
  --sfx(1)
  local intensity = players[b.pi].bomb_intensity
- add(explosions,{x=b.x,y=b.y,pi=b.pi,t=1.2,int=intensity})
+ add(explosions,{x=b.x,y=b.y,pi=b.pi,t=0.9,int=intensity})
 end
 
 function update_bombs( dt )
@@ -570,19 +570,29 @@ function draw_explosions()
     local tc = middle_idx.c + i * d.c
     local tl = middle_idx.l + i * d.l
     local tile = get_tile(tc, tl)
+    local ti = get_tile_index(tc,tl)
+    if ti == -1 then
+     break
+    end
     local coords = {x=e.x+d.c*g_twp*i,y=e.y+d.l*g_twp*i}
-    -- todo: test tile valid
-    -- todo change test order to destroy powerups.
-    if tile.tag == 1 then -- collides?
-     if tile.d == 1 then -- destructible?
-      add(draw_items, {i=tiles["block_expl"].idx,x=coords.x,y=coords.y})
-     end
+    
+    if tile.d == 1 then -- destructible?
+     add(draw_items,{i=tiles["block_expl"].idx,x=coords.x,y=coords.y})
+     break -- collides = stop fire spreading
+    elseif tile.tag == 1 then -- indestructible collides?
      break -- collides = stop fire spreading
     else
-     if i == e.int then
-      add(draw_items, {i=tiles[d.te].idx,x=coords.x,y=coords.y})
-     else
-      add(draw_items, {i=tiles[d.tm].idx,x=coords.x,y=coords.y})
+     local hidden_object = maps[1][ti].o
+     -- floor with power up
+     if hidden_object ~= 0 then
+      add(draw_items,{i=tiles["block_expl"].idx,x=coords.x,y=coords.y})
+      break
+     else -- empty floor, fire spread.     
+      if i == e.int then
+       add(draw_items,{i=tiles[d.te].idx,x=coords.x,y=coords.y})
+      else
+       add(draw_items,{i=tiles[d.tm].idx,x=coords.x,y=coords.y})
+      end
      end
     end
    end
