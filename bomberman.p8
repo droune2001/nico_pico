@@ -1,6 +1,22 @@
 pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
+--[[ TODO:
+ - debug facilities
+  - console = persistant round buffer
+  - volatile timed messages
+ - winning conditions.
+  x kill players by fire
+  - kill player by sudden death
+  - timer -> "draw"
+  - victory screen
+  - restart game
+ x bombs trigger bombs.
+ x cant drop bomb on a bomb
+ - push bombs power
+ - shoot bombs power
+ - A.I.
+]]
 players={}
 bombs={}
 explosions={}
@@ -79,58 +95,6 @@ function is_starting_player_area(l,c)
  return false
 end
 
-function init_map()
- local map0 = {}
- for l=1,g_tlc do
-  for c=1,g_tcc do
-   local ti = (l-1) * g_tcc + c;
-   
-   if c%2==0 and l%2==0 then
-    map0[ti] = {t="hard_wall",o=0} -- grid of hard indestructible tiles
-   elseif is_starting_player_area(l,c) then
-    map0[ti] = {t="floor",o=0}
-   else
-    local is_there_a_tile = ( 2 > rnd(3) )
-    if is_there_a_tile then
-     local rnd_object = max(0,flr(rnd(12) - 8.5)) -- 3/4 chance to have 0, then 1,2,3
-     if rnd(2) > 1 then
-	     map0[ti] = {t="wall",o=rnd_object} -- hide a random object inside the block.
-	    else
-	     map0[ti] = {t="wood_plot",o=rnd_object}
-	    end
-    else
-     map0[ti] = {t="floor",o=0}
-    end
-   end
-   
-  end
- end
- add(maps,map0)
-end
-
-function drop_bomb(p)
- if p.has_bombs_left > 0 then
-  sfx(0)
- 
-  -- place the bomb in the middle of the cells
-  -- where the middle of the player bbox is 
-  local player_tile_bbox = tiles["player"].bbox
-  -- player bbox in pixel map space
-  local player_bbox_center = {
-   x = p.x + player_tile_bbox.x + 0.5 * player_tile_bbox.w,
-   y = p.y + player_tile_bbox.y + 0.5 * player_tile_bbox.h
-  }
- 
-  local bomb_tile = {
-   x = g_twp * flr(player_bbox_center.x/g_twp),
-   y = g_twp * flr(player_bbox_center.y/g_twp)
-  }
-  
-  add(bombs,{x=bomb_tile.x,y=bomb_tile.y,pi=p.index,t=2})
-  p.has_bombs_left -= 1
- end
-end
-
 -- 0-based pixel map position [0..96]
 function player_starting_position(index)
  -- 1-based grid position [1..13]
@@ -153,6 +117,7 @@ end
 function create_player( index )
  local p = {}
  p.index = index -- 1-based, 1,2,3,4
+ p.is_alive = 1
  p.x = player_starting_position(index).x -- in pixel map space [0..12*8=96]
  p.y = player_starting_position(index).y
  p.spr_index = tiles["player"].idx -- note: tiles must be init
@@ -171,7 +136,6 @@ function create_player( index )
  p.tag = 0
  p.face = 3 -- facing direction
  -- old anim code, refactor.
- p.bbox = {x=0,y=0,w=8,h=8} -- used?
  p.anim = "idle"
  p.anim_idle = {f=0,st=32,sz=3,szp=2,spd=1/5}
  p.anim_walk = {f=0,st=3,sz=2,szp=2,spd=1/15}
@@ -182,6 +146,35 @@ function init_players()
  for i=1,g_nb_players do
   players[i] = create_player(i)
  end
+end
+
+function init_map()
+ local map0 = {}
+ for l=1,g_tlc do
+  for c=1,g_tcc do
+   local ti = (l-1) * g_tcc + c;
+   
+   -- default state
+   map0[ti] = {t="floor",o=0,f=0,b=0}
+   
+   if c%2==0 and l%2==0 then
+    map0[ti].t = "hard_wall" -- grid of hard indestructible tiles
+   elseif not is_starting_player_area(l,c) then
+    local is_there_a_tile = ( 2 > rnd(3) )
+    if is_there_a_tile then
+     local rnd_object = max(0,flr(rnd(12) - 8.5)) -- 3/4 chance to have 0, then 1,2,3
+     map0[ti].o = rnd_object -- hide a random object inside the block.
+     if rnd(2) > 1 then
+	     map0[ti].t = "wall"
+	    else
+	     map0[ti].t = "wood_plot"
+	    end
+    end 
+   end
+   
+  end
+ end
+ add(maps,map0)
 end
 
 function _init()
@@ -202,6 +195,10 @@ function get_tile(c,l)
  else
   return tiles[maps[1][(l-1)*g_tcc+c].t]
  end
+end
+
+function get_tile_safe(ti)
+  return tiles[maps[1][ti]]
 end
 
 function get_tile_index(c,l)
@@ -269,14 +266,7 @@ function give_pu_to_player( pu, p )
  -- formulae = 2^(powerup)*base, base+2^pu
 end
 
-function pick_pu_under_player( p )
- local entity_tile = tiles["player"]
- local entity_tile_bbox = entity_tile.bbox 
- local entity_bbox_center = {
-   x = p.x + entity_tile_bbox.x + 0.5 * entity_tile_bbox.w,
-   y = p.y + entity_tile_bbox.y + 0.5 * entity_tile_bbox.h}
- local ti_ = { c = 1 + flr(entity_bbox_center.x/g_twp), l = 1 + flr(entity_bbox_center.y/g_twp)}
- local ti = get_tile_index(ti_.c, ti_.l)
+function pick_pu_under_player( p, ti )
  local pu_under_player = maps[1][ti].o
    if pu_under_player ~= 0 then
     give_pu_to_player(pu_under_player,p)
@@ -284,7 +274,40 @@ function pick_pu_under_player( p )
    end
 end
 
-function move_player( p, deltap )
+function kill_player(p)
+ -- todo: anim
+ p.is_alive = 0
+end
+
+function test_die_by_fire( p, ti )
+ if ( maps[1][ti].f ~= 0 ) kill_player(p)
+end
+
+function move_player( p, acc, dt )
+ 
+  -- fix diagonal (normalize)
+ if acc.x ~= 0 and acc.y ~= 0 then
+  acc.x *= 0.707
+  acc.y *= 0.707
+ end
+  
+ -- give a real value to the acceleration
+ acc.x *= p.speed
+ acc.y *= p.speed
+ -- drag, lower the acceleration by a portion of the speed
+ acc.x += -p.drag * p.dx
+ acc.y += -p.drag * p.dy
+  
+ -- current_position = previous_position + previous_speed * t + 0.5 * acceleration * t*t
+ -- delta_position = current_position - previous_position
+ --                = previous_speed * t + 0.5 * acceleration * t*t
+ local deltap = {
+  x = 0.5 * acc.x * dt * dt + p.dx * dt,
+  y = 0.5 * acc.y * dt * dt + p.dy * dt
+ }
+ -- update entity speed
+ p.dx += acc.x * dt
+ p.dy += acc.y * dt
  
  -- todo: not necessarily "player" in fact... bomb slide, enemies
  local entity_tile = tiles["player"]
@@ -296,16 +319,6 @@ function move_player( p, deltap )
  local newp_bbox_ymin = newp.y + entity_tile_bbox.y
  local newp_bbox_xmax = newp.x + entity_tile_bbox.x + entity_tile_bbox.w
  local newp_bbox_ymax = newp.y + entity_tile_bbox.y + entity_tile_bbox.h
- -- note: if a bbox is across 2 pixels, we draw the max, 
- -- which makes the bbox appear 1 pixel larger.
- --[[
- add(debug_rects,{
-  x0 = g_mop.x + flr(newp_bbox_xmin),
-  y0 = g_mop.y + flr(newp_bbox_ymin),
-  x1 = g_mop.x + flr(newp_bbox_xmax),
-  y1 = g_mop.y + flr(newp_bbox_ymax),
-  c = 10})
- ]]
  
  -- get the 4 tiles the player may be in
  -- 1-based 1..13
@@ -420,59 +433,6 @@ function move_player( p, deltap )
   end
  
  end -- for 4 iterations 
-end
-
-function update_player( p, dt )
- -- 0-based player index for btn functions
- local i = p.index - 1
- local acc = { x = 0, y = 0 }
- -- set acceleration direction depending on the buttons hit
- if ( btn( 0, i ) ) acc.x -= 1
- if ( btn( 1, i ) ) acc.x += 1
- if ( btn( 2, i ) ) acc.y -= 1
- if ( btn( 3, i ) ) acc.y += 1
- 
- if ( btnp( 4, i ) ) drop_bomb( p )
- if ( btnp( 5, i ) ) p.bomb_intensity += 1
- 
- --if ( btn( 0, 1 ) ) extcmd("rec")
- --if ( btn( 1, 1 ) ) extcmd("video")
- 
- --if ( btnp( 0, 1 ) ) p.speed -= 1
- --if ( btnp( 1, 1 ) ) p.speed += 1
- --if ( btnp( 2, 1 ) ) p.drag += 1
- --if ( btnp( 3, 1 ) ) p.drag -= 1
- 
- 
- -- fix diagonal (normalize)
- if acc.x ~= 0 and acc.y ~= 0 then
-  acc.x *= 0.707
-  acc.y *= 0.707
- end
-  
- -- give a real value to the acceleration
- acc.x *= p.speed
- acc.y *= p.speed
- -- drag, lower the acceleration by a portion of the speed
- acc.x += -p.drag * p.dx
- acc.y += -p.drag * p.dy
-  
- -- current_position = previous_position + previous_speed * t + 0.5 * acceleration * t*t
- -- delta_position = current_position - previous_position
- --                = previous_speed * t + 0.5 * acceleration * t*t
- local deltap = {
-  x = 0.5 * acc.x * dt * dt + p.dx * dt,
-  y = 0.5 * acc.y * dt * dt + p.dy * dt
- }
- -- update entity speed
- p.dx += acc.x * dt
- p.dy += acc.y * dt
-  
- -- collide and sweep  
- move_player( p, deltap )
- 
- -- try to pick up
- pick_pu_under_player( p )
  
  -- update facing direction
  if p.dx == 0 and p.dy == 0 then
@@ -494,24 +454,149 @@ function update_player( p, dt )
    p.face = 0
   end
  end
+ 
+ -- return final tile index
+ local entity_bbox_center = {
+   x = p.x + entity_tile_bbox.x + 0.5 * entity_tile_bbox.w,
+   y = p.y + entity_tile_bbox.y + 0.5 * entity_tile_bbox.h}
+ local ti = { c = 1 + flr(entity_bbox_center.x/g_twp), l = 1 + flr(entity_bbox_center.y/g_twp)}
+ return get_tile_index(ti.c, ti.l)
 end
 
-function update_players( dt )
- for p in all(players) do
-  update_player( p, dt )
+function drop_bomb(p)
+ if p.has_bombs_left > 0 then
+  -- place the bomb in the middle of the cells
+  -- where the middle of the player bbox is 
+  local player_tile_bbox = tiles["player"].bbox
+  -- player bbox in pixel map space
+  local player_bbox_center = {
+   x = p.x + player_tile_bbox.x + 0.5 * player_tile_bbox.w,
+   y = p.y + player_tile_bbox.y + 0.5 * player_tile_bbox.h
+  }
+ 
+  local bomb_tile = {
+   x = g_twp * flr(player_bbox_center.x/g_twp),
+   y = g_twp * flr(player_bbox_center.y/g_twp)
+  }
+  local bomb_ti = get_tile_index(
+   1 + flr(player_bbox_center.x/g_twp), 
+   1 + flr(player_bbox_center.y/g_twp))
+  
+  if maps[1][bomb_ti].b == 0 then
+   sfx(0)
+   maps[1][bomb_ti].b = 1
+   add(bombs,{x=bomb_tile.x,y=bomb_tile.y,ti=bomb_ti,pi=p.index,t=2})
+   p.has_bombs_left -= 1
+  end
  end
 end
 
-function add_explosion(b)
+function update_player( p, dt )
+ -- 0-based player index for btn functions
+ local i = p.index - 1
+ local acc = { x = 0, y = 0 }
+ -- set acceleration direction depending on the buttons hit
+ if ( btn( 0, i ) ) acc.x -= 1
+ if ( btn( 1, i ) ) acc.x += 1
+ if ( btn( 2, i ) ) acc.y -= 1
+ if ( btn( 3, i ) ) acc.y += 1
+ 
+ if ( btnp( 4, i ) ) drop_bomb( p )
+ -- TODO: if ( btnp( 5, i ) ) try_punch_bomb( p )
+ --if ( btnp( 5, i ) ) p.bomb_intensity += 1
+ 
+ --if ( btn( 0, 1 ) ) extcmd("rec")
+ --if ( btn( 1, 1 ) ) extcmd("video")
+ 
+ --if ( btnp( 0, 1 ) ) p.speed -= 1
+ --if ( btnp( 1, 1 ) ) p.speed += 1
+ --if ( btnp( 2, 1 ) ) p.drag += 1
+ --if ( btnp( 3, 1 ) ) p.drag -= 1
+   
+ -- collide and sweep  
+ local ti = move_player( p, acc, dt )
+ 
+ -- try to pick up
+ pick_pu_under_player( p, ti )
+ 
+ -- test if is on a fire zone
+ test_die_by_fire( p, ti )
+ 
+end
+
+function update_players( dt )
+ for p in all( players ) do
+  if ( p.is_alive == 1 ) update_player( p, dt )
+ end
+end
+
+function add_explosion( b )
  --sfx(1)
- local intensity = players[b.pi].bomb_intensity
- add(explosions,{x=b.x,y=b.y,pi=b.pi,t=0.9,int=intensity})
+ local e = {
+  x = b.x,
+  y = b.y,
+  ti = b.ti,
+  pi = b.pi,
+  t = 0.9,
+  int = players[b.pi].bomb_intensity,
+  -- info used at the end of the explosion to destroy blocks and remove fire.
+  cells = {}
+ }
+ 
+ -- center of explosion contains fire and no destructible
+ add(e.cells, {ti=b.ti,f=1,d=0,o=0})
+ maps[1][b.ti].f += 1
+ 
+ local bti = {c = 1 + flr(b.x/g_twp), l = 1 + flr(b.y/g_twp)}
+ 
+ -- compute list of affected cells. put floor on fire.
+ local dirs = {
+  {c= 1, l= 0}, -- +x
+  {c=-1, l= 0}, -- -x
+  {c= 0, l= 1}, -- +y
+  {c= 0, l=-1}} -- -y
+   
+ -- for each direction of the fire
+ for d in all(dirs) do
+  for i=1,e.int do
+   local tc = bti.c + i * d.c
+   local tl = bti.l + i * d.l
+   local ti = get_tile_index(tc,tl)
+   if ti == -1 then
+    break
+   end
+   local tile = get_tile(tc,tl)
+   local hidden_object = maps[1][ti].o
+      
+   if tile.d == 1 then -- destructible?
+    add(e.cells,{ti=ti,f=0,d=1,o=hidden_object})
+    break -- destroy breakable = stop fire spreading
+   else
+    if tile.tag == 1 then -- collides? (indestructible walls)
+     break -- collides wall = stop fire spreading
+    else
+     if hidden_object ~= 0 then
+      add(e.cells,{ti=ti,f=1,d=0,o=hidden_object}) -- floor with pickup to destroy
+      maps[1][ti].f += 1
+      break
+     else
+      add(e.cells,{ti=ti,f=1,d=0,o=0}) -- empty floor, just fire
+      maps[1][ti].f += 1
+     end
+    end
+   end 
+  end
+ end
+   
+ add(explosions,e)
 end
 
 function update_bombs( dt )
  for b in all(bombs) do
+  local is_on_fire = ( maps[1][b.ti].f ~= 0 )
   b.t -= dt
-  if b.t <= 0 then
+  if b.t <= 0 or is_on_fire then
+   maps[1][b.ti].b = 0 -- remove bomb tag
    add_explosion(b)
    players[b.pi].has_bombs_left += 1
    del(bombs,b)
@@ -524,50 +609,24 @@ function update_explosions( dt )
   -- todo: update anim frame
   e.t -= dt
   if e.t <= 0 then
-   --destroy_cells
-   local test_tiles_indices = {}
-   local middle_idx = {c = 1 + flr(e.x/g_twp), l = 1 + flr(e.y/g_twp)}
-   local middle_ti = get_tile_index(middle_idx.c, middle_idx.l)
-   -- destroy powerup under bomb
-   local pu_under_bomb = maps[1][middle_ti].o
-   if pu_under_bomb ~= 0 then
-    maps[1][middle_ti].o = 0 -- destroy powerup
-   end
-   
-   local dirs = {
-    {c= 1, l= 0}, -- +x
-    {c=-1, l= 0}, -- -x
-    {c= 0, l= 1}, -- +y
-    {c= 0, l=-1}} -- -y
-   
-   -- for each direction of the fire
-   for d in all(dirs) do
-    for i=1,e.int do
-     local tc = middle_idx.c + i * d.c
-     local tl = middle_idx.l + i * d.l
-     local tile = get_tile(tc, tl)
-     local ti = get_tile_index(tc,tl)
-     if ti == -1 then
-      break
-     end
-     local hidden_object = maps[1][ti].o
-      
-     if tile.d == 1 then -- destructible?
-      maps[1][ti] = {t="floor",o=hidden_object}
-      break -- destroy breakable = stop fire spreading
-     else
-      if tile.tag == 1 then -- collides? (indestructible walls)
-       break -- collides wall = stop fire spreading
-      else
-       if hidden_object ~= 0 then
-        maps[1][ti].o = 0 -- destroy powerup
-        break
-       end
-      end
-     end 
+    
+   for c in all(e.cells) do
+    -- remove fire
+    if c.f ~= 0 then 
+     maps[1][c.ti].f -= 1 
     end
+    -- remove destructible
+    if c.d == 1 then
+     maps[1][c.ti].t = "floor"
+     maps[1][c.ti].o = c.o
+    else
+     -- or remove powerup
+     if c.o ~= 0 then
+      maps[1][c.ti].o = 0
+     end
+    end 
    end
-   
+  
    del(explosions,e)
   end
  end
@@ -655,14 +714,13 @@ function draw_explosions()
   end
  end
  
- 
  for di in all( draw_items ) do
   spr( di.i, g_mop.x + di.x, g_mop.y + di.y )
  end
 end
 
 function draw_player( p )
- spr( p.spr_index + p.face, g_mop.x + p.x, g_mop.y + p.y )
+ if ( p.is_alive == 1 ) spr( p.spr_index + p.face, g_mop.x + p.x, g_mop.y + p.y )
 end
 
 function draw_players()
@@ -693,71 +751,24 @@ function draw_debug_gui()
   print("s: "..pi.speed.." d:"..pi.drag.." dx:"..pi.dx.." dy:"..pi.dy, 0, 8+16*(i-1), 7)
  end
 ]]
-
+ 
 --[[
- for i=1,#players do
-  local player_tile_bbox = tiles["player"].bbox
-  -- player bbox in pixel map space
-  local test_bbox_xmin = players[i].x + player_tile_bbox.x
-  local test_bbox_ymin = players[i].y + player_tile_bbox.y
-  local test_bbox_xmax = players[i].x + player_tile_bbox.x + player_tile_bbox.w
-  local test_bbox_ymax = players[i].y + player_tile_bbox.y + player_tile_bbox.h
- 
-  local tile_index_xmin = 1 + flr(test_bbox_xmin/g_twp)
-  local tile_index_ymin = 1 + flr(test_bbox_ymin/g_twp)
-  local tile_index_xmax = 1 + flr(test_bbox_xmax/g_twp)
-  local tile_index_ymax = 1 + flr(test_bbox_ymax/g_twp)
- 
-  local tile_indices = {
-   {c = tile_index_xmin, l = tile_index_ymin},
-   {c = tile_index_xmin, l = tile_index_ymax},
-   {c = tile_index_xmax, l = tile_index_ymin},
-   {c = tile_index_xmax, l = tile_index_ymax}
-  }
-  
-  local i = 0
-  for t in all(tile_indices) do
-   local tile = tiles[maps[1][(t.l-1)*g_tcc+t.c].t]
-   -- tile bbox in pixel map space
-   local tile_bbox_xmin = g_twp * (t.c-1) + tile.bbox.x
-   local tile_bbox_ymin = g_twp * (t.l-1) + tile.bbox.y
-   local tile_bbox_xmax = g_twp * (t.c-1) + tile.bbox.x + tile.bbox.w
-   local tile_bbox_ymax = g_twp * (t.l-1) + tile.bbox.y + tile.bbox.h
-  
-   print("tc: "..t.c.." tl:"..t.l.." tt: "..tile.tag, 0, 8+i, 7)
-   i += 8
-   
-   -- tag == 0 is not colliding
-   if tile.tag == 0 then 
-    rect(g_mop.x + tile_bbox_xmin, g_mop.y + tile_bbox_ymin, g_mop.x + tile_bbox_xmax - 1, g_mop.y + tile_bbox_ymax - 1, 7)
-   else
-	-- test collision
-    if test_bbox_xmin >= tile_bbox_xmax 
-     or test_bbox_xmax <= tile_bbox_xmin
-     or test_bbox_ymin >= tile_bbox_ymax
-     or test_bbox_ymax <= tile_bbox_ymin
-	then
-	 -- no collision: green
-     rect( g_mop.x + tile_bbox_xmin, g_mop.y + tile_bbox_ymin, g_mop.x + tile_bbox_xmax - 1, g_mop.y + tile_bbox_ymax - 1, 11 )
-    else
-	 -- collision: orange
-     rect( g_mop.x + tile_bbox_xmin, g_mop.y + tile_bbox_ymin, g_mop.x + tile_bbox_xmax - 1, g_mop.y + tile_bbox_ymax - 1, 9 )
-    end
-   end
+ for i=1,#explosions do
+  local e = explosions[i]
+  print( "e.t: "..e.t, 10, 16+8*i, 9)
+  for j=1,#e.cells do
+   local c = e.cells[j]
+   print("e.ti: "..c.ti, 10, 32+8*j, 9)
+   --if ( c.f ) maps[1][e.ti].f -= 1
   end
-  
-  -- draw player bbox
-  rect( g_mop.x + test_bbox_xmin, g_mop.y + test_bbox_ymin, g_mop.x + test_bbox_xmax - 1, g_mop.y + test_bbox_ymax - 1, 10 )
  end
- ]]
- 
- --[[ 
+]]
+--[[
  print(#explosions,10,64,9)
  for i=1,#explosions do
   print("x: "..explosions[i].x.." y:"..explosions[i].y.." pi:"..explosions[i].pi.." int:"..explosions[i].int, 10, 64+8*i, 9)
  end
 ]]
-
 end
  
 
