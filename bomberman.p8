@@ -191,6 +191,14 @@ end
 -- update
 --
 
+function bomb_at(c,l)
+ if c < 1 or c > g_tcc or l < 1 or l > g_tlc then
+  return false
+ else
+  return maps[1][(l-1)*g_tcc+c].b == 1
+ end
+end
+
 function get_tile(c,l)
  if c < 1 or c > g_tcc or l < 1 or l > g_tlc then
   return tiles["exterior_wall"]
@@ -354,12 +362,17 @@ function move_player( p, acc, dt )
    for t in all(tile_indices) do
 
     local test_tile = get_tile(t.c,t.l)
+    local bomb_here = bomb_at(t.c,t.l)
     -- tag == 1 is collidable
-    if test_tile.tag == 1 then -- and not non_spatial
+    if test_tile.tag == 1 or bomb_here then -- and not non_spatial
      -- test_tile bbox in pixel map space
-	   local test_tile_bbox_center = {
-	   x = g_twp * (t.c-1) + test_tile.bbox.x + 0.5 * test_tile.bbox.w,
-	   y = g_twp * (t.l-1) + test_tile.bbox.y + 0.5 * test_tile.bbox.h}
+	   local test_tile_bbox_center = 
+     bomb_here and {
+      x = g_twp * (t.c-1) + 4, -- hardcoded full-tile bbox for floor with bomb
+	     y = g_twp * (t.l-1) + 4}
+     or {
+	     x = g_twp * (t.c-1) + test_tile.bbox.x + 0.5 * test_tile.bbox.w,
+	     y = g_twp * (t.l-1) + test_tile.bbox.y + 0.5 * test_tile.bbox.h}
 	 
 	   -- minkowsky sum of test_tile and entity_tile
 	   -- dans le repere centre bbox de la test_entity
