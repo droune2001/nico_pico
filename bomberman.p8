@@ -5,13 +5,16 @@ __lua__
  - debug facilities
   - console = persistant round buffer
   - volatile timed messages
+  
  - winning conditions.
   x kill players by fire
   - kill player by sudden death
   - timer -> "draw"
   - victory screen
   - restart game
- - bombs block players
+ x powerups disappear in 5 sec.
+ - dying = scatter powerups.
+ x bombs block players
  x bombs trigger bombs.
  x cant drop bomb on a bomb
  - push bombs power
@@ -21,6 +24,7 @@ __lua__
 players={}
 bombs={}
 explosions={}
+pickups={} -- active powerups on field
 tiles={} -- tile map by name, stores id, bbox and flags.
 maps={}
 powerups={}
@@ -280,7 +284,7 @@ function pick_pu_under_player( p, ti )
  local pu_under_player = maps[1][ti].o
    if pu_under_player ~= 0 then
     give_pu_to_player(pu_under_player,p)
-    maps[1][ti].o = 0 -- destroy powerup
+    remove_powerup(ti)
    end
 end
 
@@ -619,6 +623,27 @@ function update_bombs( dt )
  end
 end
 
+function update_pickups( dt )
+ for k, v in pairs(pickups) do
+  v.t -= dt
+  if v.t <= 0 then
+   remove_powerup(k)
+  end
+ end
+end
+
+function add_powerup(tile_index,obj)
+ if obj ~= 0 then
+  maps[1][tile_index].o = obj
+  pickups[tile_index] = {t=5,o=obj}
+ end
+end
+
+function remove_powerup(ti)
+ maps[1][ti].o = 0
+ pickups[ti] = nil
+end
+
 function update_explosions( dt )
  for e in all(explosions) do
   -- todo: update anim frame
@@ -633,11 +658,11 @@ function update_explosions( dt )
     -- remove destructible
     if c.d == 1 then
      maps[1][c.ti].t = "floor"
-     maps[1][c.ti].o = c.o
+     add_powerup(c.ti,c.o)
     else
      -- or remove powerup
      if c.o ~= 0 then
-      maps[1][c.ti].o = 0
+      remove_powerup(c.ti)
      end
     end 
    end
@@ -652,6 +677,7 @@ function _update()
  debug_rects={} -- leak but garbage collector?
  update_bombs( dt )
  update_explosions( dt )
+ update_pickups( dt )
  update_players( dt )
 end
 
@@ -748,7 +774,14 @@ function draw_debug_gui()
  for r in all(debug_rects) do
   rect(r.x0,r.y0,r.x1,r.y1,r.c)
  end
-
+--[[
+ print(#pickups,10,10,8)
+ local pu_i = 1
+ for k,p in pairs(pickups) do
+  print("ti: "..k.." t:"..p.t.." o:"..p.o, 10, 10+8*pu_i, 8)
+  pu_i += 1
+ end
+]]
 --[[
  print(#bombs,10,10,8)
  for i=1,#bombs do
