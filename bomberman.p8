@@ -6,12 +6,20 @@ __lua__
   - console = persistant round buffer
   - volatile timed messages
   
- - winning conditions.
+ - GUI:
+  - nb cups per player
+  - remaining time
+ - winning conditions for 1 match
   x kill players by fire
   - kill player by sudden death
   - timer -> "draw"
-  - victory screen
-  - restart game
+  x simulkill -> draw
+  x victory screen
+  x restart game
+ - cups screen
+ - winning condition = first to max cups
+ - menu screen: add nb cups goal.
+ - add transition states between screens.
  x powerups disappear in 5 sec.
  - dying = scatter powerups.
  x bombs block players
@@ -21,6 +29,8 @@ __lua__
  - shoot bombs power
  - a.i.
 ]]
+state=0 -- 0=menu, 1=game, 2=endgame
+-- TODO: add transitional states
 players={}
 bombs={}
 explosions={}
@@ -30,7 +40,7 @@ maps={}
 powerups={}
 debug_rects={} -- map space pixels {x0,y0,x1,y1,color}
 
-g_nb_players = 4
+g_nb_players = 2 -- 2..4
 g_twp = 8 -- global tile width in pixels
 g_mop = {x=12,y=12} -- global map offsets in pixels
 g_tlc = 13 -- global number of tile lines
@@ -44,11 +54,14 @@ g_max_pu_bomb = 5
 g_max_pu_speed = 3
 g_max_pu_fire = 12 -- maybe have a non-linear progress? quadratic?
 
+g_winning_player = 0
+
 --
 -- init/create
 --
 
 function init_tiles()
+ tiles = {}
  -- idx: base tile index in pico8 tileset.
  -- tag: is collidable
  -- d: is destructible
@@ -80,6 +93,7 @@ function init_tiles()
 end
 
 function init_powerups()
+ powerups = {}
  add(powerups, {t="pu_bomb"})
  add(powerups, {t="pu_speed"})
  add(powerups, {t="pu_fire"})
@@ -149,12 +163,14 @@ function create_player( index )
 end
 
 function init_players()
+ players = {}
  for i=1,g_nb_players do
   players[i] = create_player(i)
  end
 end
 
 function init_map()
+ maps = {}
  local map0 = {}
  for l=1,g_tlc do
   for c=1,g_tcc do
@@ -183,8 +199,20 @@ function init_map()
  add(maps,map0)
 end
 
-function _init()
+function reset_game()
+ --players={}
+ bombs={}
+ explosions={}
+ pickups={} -- active powerups on field
+ --tiles={} -- tile map by name, stores id, bbox and flags.
+ --maps={}
+ --powerups={}
+ debug_rects={}
+end
+
+function init_game()
  --music(0)
+ reset_game() 
  init_powerups()
  init_tiles()
  init_map()
@@ -672,13 +700,56 @@ function update_explosions( dt )
  end
 end
 
-function _update()
+function check_endgame()
+ local nb_players_alive = 0
+ g_winning_player = 0
+ for i=1,g_nb_players do
+  if players[i].is_alive == 1 then 
+   nb_players_alive += 1
+   g_winning_player = i
+  end
+ end
+ -- or time is up.
+ if nb_players_alive == 1 or 
+    nb_players_alive == 0 
+ then 
+  state = 2 
+ end
+end
+
+function update_game()
  local dt = 1/30
  debug_rects={} -- leak but garbage collector?
  update_bombs( dt )
  update_explosions( dt )
  update_pickups( dt )
  update_players( dt )
+ check_endgame()
+end
+
+function update_menu()
+ local dt = 1/30
+ for i=0,3 do
+  -- left = cycle nb_players downwards
+  if ( btnp( 0, i ) ) g_nb_players = 2 + g_nb_players % 3
+  -- right = cycle nb_players upwards
+  if ( btnp( 1, i ) ) g_nb_players = 2 + (g_nb_players -1)%3
+  -- start game
+  if ( btnp( 4, i ) ) then 
+   init_game()
+   state = 1 
+  end
+ end
+end
+
+function update_endgame()
+ local dt = 1/30
+ for i=0,g_nb_players-1 do
+  if ( btnp( 4, i ) ) then
+   init_game()
+   state = 0
+  end
+ end
 end
 
 --
@@ -825,7 +896,7 @@ function draw_gui()
  
 end
 
-function _draw()
+function draw_game()
  --cls()
  draw_map()
  draw_bombs()
@@ -833,6 +904,49 @@ function _draw()
  draw_players()
  draw_gui()
  draw_debug_gui()
+end
+
+function draw_menu()
+ cls(2)
+ print("nb_players: "..g_nb_players, 10, 10, 8)
+end
+
+function draw_endgame()
+ cls(1)
+ print("the end", 10, 10, 8)
+ if g_winning_player == 0 then
+  print("draw", 20, 20, 8)
+ else
+  print("player "..g_winning_player.." wins!", 20, 20, 8)
+ end
+end
+
+--
+-- MAIN FUNCTIONS
+--
+
+function _init()
+ state = 0
+end
+
+function _update()
+ if state == 0 then
+  update_menu()
+ elseif state == 1 then
+  update_game()
+ else
+  update_endgame()
+ end
+end
+
+function _draw()
+ if state == 0 then
+  draw_menu()
+ elseif state == 1 then
+  draw_game()
+ else
+  draw_endgame()
+ end
 end
 
 __gfx__
