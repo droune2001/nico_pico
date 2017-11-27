@@ -2,9 +2,12 @@ pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
 --[[ todo:
- - debug facilities
-  - console = persistant round buffer
-  - volatile timed messages
+ - TUNING:
+  - taller characters
+  - bigger character bbox (square) 1,2,5.9,5.9
+  - shorter bomb explosion: 0.6-0.7
+  - faster beginning speed, faster max speed
+  - remove pickup vanishing? or at least longer.
   
  - GUI:
   - nb cups per player
