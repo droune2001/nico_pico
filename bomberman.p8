@@ -2,32 +2,27 @@ pico-8 cartridge // http://www.pico-8.com
 version 8
 __lua__
 --[[ todo:
- - tuning:
-  - taller characters
-  - bigger character bbox (square) 1,2,5.9,5.9
-  - shorter bomb explosion: 0.6-0.7
-  - faster beginning speed, faster max speed
-  - remove pickup vanishing? or at least longer.
+
+ [render]
+ - bigger characters
+ - character animations (3 sprites per anim)
+ - animations mode: one_shot, loop, reverse.
   
- - gui:
+ [gui]
   - nb cups per player
   - remaining time
- - winning conditions for 1 match
-  x kill players by fire
+  - cups screen
+  - menu screen: add nb cups goal.
+  - add transition states between screens.
+ 
+ [gameplay]
+ - winning conditions for 1 match/cup
   - kill player by sudden death
   - timer -> "draw"
-  x simulkill -> draw
-  x victory screen
-  x restart game
- - cups screen
  - winning condition = first to max cups
- - menu screen: add nb cups goal.
- - add transition states between screens.
- x powerups disappear in 5 sec.
  - dying = scatter powerups.
- x bombs block players
- x bombs trigger bombs.
- x cant drop bomb on a bomb
+
+ [opt]
  - push bombs power
  - shoot bombs power
  - a.i.
@@ -59,6 +54,10 @@ g_max_pu_fire = 12 -- maybe have a non-linear progress? quadratic?
 
 g_winning_player = 0
 
+g_bomb_timeout = 2 -- nb seconds before explosion
+g_explosion_duration = 0.8 -- nb seconds during which fire is harmful
+g_pickup_timeout = 8 -- nb seconds before pickup disappears
+
 --
 -- init/create
 --
@@ -73,11 +72,11 @@ function init_tiles()
  --       x+(w-1) and y+(h-1) gives the coords of top-left of the max pixels.
  tiles["exterior_wall"] = {idx=-1,tag=1,d=0,bbox={x=0,y=0,w=8,h=8}} -- fake tile that acts like a wall
  
- tiles["player"] = {idx=0,tag=1,d=0,bbox={x=1,y=2,w=5.9,h=5.9}}--bbox={x=2,y=5,w=3.9,h=2.9}}
+ tiles["player"] = {idx=0,tag=1,d=0,bbox={x=1,y=2,w=5.9,h=5.9}}
  
  tiles["wall"] = {idx=48,tag=1,d=1,bbox={x=1,y=1,w=6,h=6}}
  tiles["floor"] = {idx=49,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
- tiles["wood_plot"] = {idx=35,tag=1,d=1,bbox={x=0,y=0,w=8,h=8}}--bbox={x=1.5,y=0,w=5,h=7}}
+ tiles["wood_plot"] = {idx=35,tag=1,d=1,bbox={x=0,y=0,w=8,h=8}}
  tiles["hard_wall"] = {idx=36,tag=1,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["champi"] = {idx=20,tag=1,d=1,bbox={x=0,y=0,w=8,h=8}}
  
@@ -147,23 +146,25 @@ function create_player( index )
  p.pu = {b=0,s=0,f=0} -- bomb, speed, fire
  p.has_bombs_left = 1
  p.bomb_intensity = 1
- -- normal: 200 8
- -- fast: 400 10
- -- faster: 800 14
- -- fastest: 1600 22
- -- formulae = 2^(powerup)*base, base+2^pu
- p.speed = 200
- p.drag = 8
+ -- SLOW: 200 8 -- keep it for a slowdown pickup
+ -- normal: 400 10
+ -- x2: 800 14
+ -- x4: 1600 22
+ -- x8: 3200 38
+ -- formulae = 2^(powerup)*100, 6+2^pu
+ p.speed = 400
+ p.drag = 10
  p.dx = 0
  p.dy = 0
  p.tag = 0
  p.face = 3 -- facing direction
  p.anim = "idle"
  p.anim_time = 0
+ -- f: 0 = once, 1 = loop, 2 = reverse
  p.anims = { 
-  ["idle"] = {f=0,st=65,sz=1,spd=1},
-  ["walk"] = {f=0,st=64,sz=3,spd=1/3},
-  ["death"] = {f=0,st=64,sz=1,spd=1/15}
+  ["idle"] = {f=0,st=65,sz=1,spd=1,f=1},
+  ["walk"] = {f=0,st=64,sz=3,spd=1/3,f=2},
+  ["death"] = {f=0,st=64,sz=1,spd=1/15,f=0}
  }
  return p
 end
@@ -295,9 +296,10 @@ function give_pu_to_player( pu, p )
   if p.pu.s < g_max_pu_speed then
    p.pu.s += 1
    local speeds_drags = {
-    {s=400,d=10},
     {s=800,d=14},
-    {s=1600,d=22}}
+    {s=1600,d=22},
+    {s=3200,d=38}
+   }
    p.speed = speeds_drags[p.pu.s].s
    p.drag = speeds_drags[p.pu.s].d
   end
@@ -307,11 +309,6 @@ function give_pu_to_player( pu, p )
    p.bomb_intensity += 1
   end
  end
- -- normal: 200 8
- -- fast: 400 10
- -- faster: 800 14
- -- fastest: 1600 22
- -- formulae = 2^(powerup)*base, base+2^pu
 end
 
 function pick_pu_under_player( p, ti )
@@ -517,15 +514,14 @@ function drop_bomb(p)
   if maps[1][bomb_ti].b == 0 then
    sfx(0)
    maps[1][bomb_ti].b = 1
-   add(bombs,{x=bomb_tile.x,y=bomb_tile.y,ti=bomb_ti,pi=p.index,t=2})
+   add(bombs,{x=bomb_tile.x,y=bomb_tile.y,ti=bomb_ti,pi=p.index,t=g_bomb_timeout})
    p.has_bombs_left -= 1
   end
  end
 end
 
-function get_player_top_spr( p, dt )
+function get_player_spr( p, dt )
  local pa = p.anims[p.anim]
- pa.f = flr( (p.anim_time/pa.spd) % p.anims[p.anim].sz )
  local sprf = pa.st + pa.f + ( 3 * p.face )
  return sprf
 end
@@ -571,6 +567,18 @@ function update_player_anim( p, dt )
   p.anim_time = 0
  end   
   
+ local pa = p.anims[p.anim]
+  -- f: 0 = once, 1 = loop, 2 = reverse
+ if pa.f == 0 then
+  pa.f = flr( p.anim_time/pa.spd )
+  if pa.f >= pa.sz then pa.f = pa.sz - 1 end
+ elseif pa.f == 1 then
+  pa.f = flr( (p.anim_time/pa.spd) % p.anims[p.anim].sz )
+ elseif pa.f == 2 then
+  -- TODO
+  pa.f = flr( (p.anim_time/pa.spd) % p.anims[p.anim].sz )
+ end
+
 end
 
 function update_player( p, dt )
@@ -621,7 +629,7 @@ function add_explosion( b )
   y = b.y,
   ti = b.ti,
   pi = b.pi,
-  t = 0.9,
+  t = g_explosion_duration,
   int = players[b.pi].bomb_intensity,
   -- info used at the end of the explosion to destroy blocks and remove fire.
   cells = {}
@@ -700,7 +708,7 @@ end
 function add_powerup(tile_index,obj)
  if obj ~= 0 then
   maps[1][tile_index].o = obj
-  pickups[tile_index] = {t=5,o=obj}
+  pickups[tile_index] = {t=g_pickup_timeout,o=obj}
  end
 end
 
@@ -873,7 +881,7 @@ function draw_player( p )
   --spr( p.spr_index + p.face, g_mop.x + p.x, g_mop.y + p.y )
   local px = g_mop.x + p.x
   local py = g_mop.y + p.y
-  local pspr = get_player_top_spr( p, dt )
+  local pspr = get_player_spr( p, dt )
   spr( pspr+16, px, py )
   spr( pspr,    px, py-8 )
  end
