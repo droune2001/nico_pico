@@ -1008,6 +1008,7 @@ end
 --
 
 function _init()
+ cartdata("droune2001-bomberfun-0.01")
  state = 0
 end
 
