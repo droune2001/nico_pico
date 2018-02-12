@@ -594,12 +594,11 @@ function update_player_anim( p, dt )
   end
   pa.f = flr(lf)
   
- else -- modulo cycle
- 
-  pa.f = flr( (p.anim_time/pa.spd) % p.anims[p.anim].sz )
  elseif pa.f == 2 then
+ 
   -- todo
   pa.f = flr( (p.anim_time/pa.spd) % p.anims[p.anim].sz )
+  
  end
 
 end
@@ -1010,7 +1009,7 @@ end
 --
 
 function _init()
- cartdata("droune2001-bomberfun-0.01")
+ --cartdata("droune2001-bomberfun-0.01")
  state = 0
 end
 
