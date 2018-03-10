@@ -4,15 +4,28 @@ __lua__
 --explosion test
 --droune
 
+-- debug vars
+_explo_duration=0.25
+--_init_speed,_damp=150,3
+_init_speed,_damp=300,9
+_nb_particles_per_emission=25
+_cam_shk_amnt = 6
+_cam_shk_damp = .7
+
 t=0
 dt=.0166667
 
 max_dist_cells=1
 
+
+
+
+
 function create_particle_system(max_nb_parts,px,py)
  local particle_system = {
   particles = {},
   emitter = nil,
+  emit_time_left = 0,
   max_particles = max_nb_parts or 1000,
   nb_active_particles = 0,
   first_free_cell = 1, -- 0 if full
@@ -46,6 +59,14 @@ function create_particle_system(max_nb_parts,px,py)
      else
       p:update()
      end
+    end
+   end
+
+   if this.emit_time_left > 0 then
+    this:emit()
+    this.emit_time_left -= dt
+    if this.emit_time_left - .001 < 0 then
+      this.emit_time_left = 0
     end
    end
   end,
@@ -111,29 +132,45 @@ function create_omni_emitter()
  }
 end
 
+
+
 function create_quad_fire_emitter()
  return {
-  n = 10,
-  
+  n = _nb_particles_per_emission,
   
   spawn_particle = function(e,cx,cy)
    local dir = flr(rnd(4))/4 -- 4 quadrants for the sin/cos funcs
-   local speed = 150+rnd(25)
+   --local speed = 150+rnd(25)
+   
+   local ox = rnd(4)-2+rnd(2)-1 -- -3,3
+   local oy = rnd(4)-2+rnd(2)-1 -- -3,3
+   local ex = abs(ox*oy)/(3*3) -- excentricity: 0 center, 1 corner
+   local ex2 = ex*ex
+   local _ex = 1.-ex
+   local _ex2 = _ex*_ex
+
+   local speed = _init_speed+rnd(0.15*_init_speed)
+   --local life = .2+rnd(.6)
    local life = 0.7+rnd(0.2)
+
    return {
     is_alive = true,
-    x = cx+rnd(4)-2,
-    y = cy+rnd(4)-2,
-    vx = speed*cos(dir),
-    vy = speed*sin(dir),
+    x = cx+ox,
+    y = cy+oy,
+    vx = _ex2*speed*cos(dir),
+    vy = _ex2*speed*sin(dir),
+    -- todo: add variability in speed
+    -- slow external particles move more
+    -- randomly than central high speed parts.
     fx = 0,
     fy = 0,
     ax = 0,
     ay = 0,
     m = 1,
-    kd = 3,
-    colors={10,9,8,13},
-    radius = 1+rnd(2),
+    kd = _damp,
+    --colors={10,9,9,8,8,8,13,13,13,13},
+    colors={10,9,9,8,13,13,13},
+    radius = 1.+_ex2*rnd(3),
     age = life,
     max_age = life,
     next_free_cell = 0, -- will be set upon dying
@@ -168,14 +205,14 @@ function create_quad_fire_emitter()
  }
 end
 
-function start_emit_test()
- if ps.emitter ~= nil then
-  ps.emitter.should_emit = true
- end
+function start_explosion(durationSeconds)
+  ps.emit_time_left = durationSeconds
 end
 
-_cam_shk_amnt = 6
-_cam_shk_damp = .7
+
+
+
+-- camera shake effect
 
 cam_shk_x = 0
 cam_shk_y = 0
@@ -206,6 +243,7 @@ end
 
 function _init()
  ps = create_particle_system(1000, 64+4, 64-4)
+ -- mettre plusieurs emitters dans un ps.
  ps.emitter = create_quad_fire_emitter()
 end
 
@@ -213,14 +251,30 @@ function _update60()
 
  t+=dt
  
- if btnp(0) then _cam_shk_damp += .1 end
- if btnp(1) then _cam_shk_damp -= .1 end
+-- if btnp(0) then _cam_shk_damp += .1 end
+-- if btnp(1) then _cam_shk_damp -= .1 end
 
- if btnp(2) then _cam_shk_amnt += 1 end
- if btnp(3) then _cam_shk_amnt -= 1 end
- 
- if btnp(4) then start_screen_shake(_cam_shk_amnt,_cam_shk_damp) end
- if btn(4) then ps:emit() end
+-- if btnp(2) then _cam_shk_amnt += 1 end
+-- if btnp(3) then _cam_shk_amnt -= 1 end
+
+-- if btnp(0) then _init_speed += 10 end
+-- if btnp(1) then _init_speed -= 10 end
+
+-- if btnp(2) then _damp += .1 end
+-- if btnp(3) then _damp -= .1 end
+
+
+ if btnp(0) then _explo_duration -= .1 end
+ if btnp(1) then _explo_duration += .1 end
+
+ if btnp(2) then _nb_particles_per_emission -= 1 end
+ if btnp(3) then _nb_particles_per_emission += 1 end
+
+ if btnp(4) then 
+  start_screen_shake(_cam_shk_amnt,_cam_shk_damp) 
+  start_explosion(_explo_duration)
+ end
+ --if btn(4) then ps:emit() end
  
  ps:update()
  update_camera_shake()
@@ -241,8 +295,12 @@ end
 
 function debug_draw()
  print("nb_alive: "..ps.nb_active_particles,0,0,8)
- print("shk_amnt: ".._cam_shk_amnt.." "..cam_shk_amnt,0,8,12)
- print("shk_damp: ".._cam_shk_damp,0,16,12)
+ --print("shk_amnt: ".._cam_shk_amnt.." "..cam_shk_amnt,0,8,12)
+ --print("shk_damp: ".._cam_shk_damp,0,16,12)
+ --print("_init_speed: ".._init_speed,0,8,12)
+ --print("_damp: ".._damp,0,16,12)
+ print("_explo_duration: ".._explo_duration,0,8,12)
+ print("_nb_parts_per_em: ".._nb_particles_per_emission,0,16,12)
 end
 __gfx__
 00000000ffffffffffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
