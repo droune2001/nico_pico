@@ -1,33 +1,24 @@
 pico-8 cartridge // http://www.pico-8.com
 version 16
 __lua__
-curr_frame=1
-cpu_hist={}
-mem_hist={}
-cpu_update_mean=0
-cpu_draw_mean=0
-cpu_mean=0
-mem_mean=0
- 
+-- cpu mem profiler
+-- droune2001
+
 function _init()
- for i=1,60 do
-  -- upd,dra, pix norms
-  cpu_hist[i]={0,0,0,0}
-  -- real val, pix norm
-  mem_hist[i]={0,0}
- end
+ profiler = create_profiler()
+ profiler:init()
 end
 
 function _update60()
  local dt=1.0/60.0
  fill_mem(dt)
- cpu_hist[curr_frame+1][1]=stat(1)
+ profiler:log_update_time()
 end
 
 function _draw()
  cls(12)
  burn_cpu_with_useless_draw()
- draw_stats()
+ profiler:draw()
 end
 
 -->8
@@ -38,93 +29,135 @@ function print_outline(t,x,y,c,bc)
  print(t,x,y,c)
 end
 
-function draw_stats()
- 
- local chox=1 -- cpu hist offset x
- local mhox=chox+66
- 
- mem_hist[curr_frame+1][1]=stat(0)
- cpu_hist[curr_frame+1][2]=stat(1)
- curr_frame = (curr_frame+1)%60
- 
- cpu_update_mean=0
- cpu_draw_mean=0
- cpu_mean=0
- mem_mean=0
- -- normalize stats and compute means
- for i=1,60 do
-  local c1=31*cpu_hist[i][1]
-  local c2=31*cpu_hist[i][2]
-  
-  cpu_hist[i][3]=c1
-  cpu_hist[i][4]=c2
-  
-  cpu_mean+=c2
-  cpu_update_mean+=c1
-  cpu_draw_mean+=c2-c1
-  
-  local m=31*mem_hist[i][1]/2048.0  
-  mem_mean+=m
-  mem_hist[i][2]=m
- end
+-- uses 42k of memory
+-- uses 15% cpu to draw. 13% without outlines.
 
- cpu_mean = cpu_mean/60
- cpu_update_mean = cpu_update_mean/60
- cpu_draw_mean = cpu_draw_mean/60
- mem_mean = mem_mean / 60
+function create_profiler()
+return {
+ curr_frame=1,
+ cpu_hist={},
+ mem_hist={},
+ cpu_update_mean=0,
+ cpu_draw_mean=0,
+ cpu_mean=0,
+ mem_mean=0,
  
- 
- 
- for i=1,60 do
-  local c1=cpu_hist[i][3]
-  local c2=cpu_hist[i][4]
-  -- update time
-  line(chox+i,126,chox+i,126-c1,6)
-  -- draw time
-  line(chox+i,126-c1-1,chox+i,126-c2,13)
-  -- outline
-  local mx=c2
-  if i>1 then mx=max(mx,cpu_hist[i-1][4]) end
-  if i<60 then mx=max(mx,cpu_hist[i+1][4]) end
-  line(chox+i,126-mx,chox+i,126-c2,1)
-  
-  local m=mem_hist[i][2]
-  if m > 0 then
-   line(mhox+i,126,mhox+i,126-m,9)
+ init = function(this)
+  for i=1,60 do
+   -- upd,dra, pix norms
+   this.cpu_hist[i]={0,0,0,0}
+   -- real val, pix norm
+   this.mem_hist[i]={0,0}
   end
+ end,
+ 
+ log_update_time = function(this)
+  this.cpu_hist[this.curr_frame+1][1]=stat(1)
+ end,
+ 
+ log_draw_time = function(this)
+  this.mem_hist[this.curr_frame+1][1]=stat(0)
+  this.cpu_hist[this.curr_frame+1][2]=stat(1)
+ end,
+ 
+ -- normalize stats and compute means
+ compute_frame_stats = function(this)
+  this.curr_frame = (this.curr_frame+1)%60
+  this.cpu_update_mean=0
+  this.cpu_draw_mean=0
+  this.cpu_mean=0
+  this.mem_mean=0
   
+  for i=1,60 do
+   local c1=31*this.cpu_hist[i][1]
+   local c2=31*this.cpu_hist[i][2]
+  
+   this.cpu_hist[i][3]=c1
+   this.cpu_hist[i][4]=c2
+  
+   this.cpu_mean+=c2
+   this.cpu_update_mean+=c1
+   this.cpu_draw_mean+=c2-c1
+  
+   local m=62*(this.mem_hist[i][1]/2048.0)
+   this.mem_mean+=m
+   this.mem_hist[i][2]=m
+  end
+
+  this.cpu_mean = this.cpu_mean/60
+  this.cpu_update_mean = this.cpu_update_mean/60
+  this.cpu_draw_mean = this.cpu_draw_mean/60
+  this.mem_mean = this.mem_mean / 60
+ end,
+ 
+ update = function(this)
+  this:log_update_time()
+ end,
+ 
+ draw = function(this)
+  this:log_draw_time()
+  this:compute_frame_stats()
+ 
+  local chox=1 -- cpu hist offset x
+  local mhox=chox+66
+  for i=1,60 do
+   local c1=this.cpu_hist[i][3]
+   local c2=this.cpu_hist[i][4]
+   -- update time
+   line(chox+i,126,chox+i,126-c1,6)
+   -- draw time
+   line(chox+i,126-c1-1,chox+i,126-c2,13)
+   -- outline
+   local mx=c2
+   if i>1 then mx=max(mx,this.cpu_hist[i-1][4]) end
+   if i<60 then mx=max(mx,this.cpu_hist[i+1][4]) end
+   line(chox+i,126-mx,chox+i,126-c2,1)
+  
+   local m=this.mem_hist[i][2]
+   if m > 0 then
+    line(mhox+i,126,mhox+i,126-m,9)
+    mx=m
+    if i>1 then mx=max(mx,this.mem_hist[i-1][2]) end
+    if i<60 then mx=max(mx,this.mem_hist[i+1][2]) end
+    line(mhox+i,126-mx,mhox+i,126-m,1)
+   end
+  end
+ 
+  line(chox+1,126-this.cpu_mean,chox+60,126-this.cpu_mean,8)
+  print_outline("total",chox+13,126-this.cpu_mean-6,8)
+ 
+  line(chox+1,126-this.cpu_update_mean,chox+60,126-this.cpu_update_mean,9)
+  print_outline("upd",chox+34,126-this.cpu_update_mean-6,9)
+ 
+  line(chox+1,126-this.cpu_draw_mean,chox+60,126-this.cpu_draw_mean,10)
+  print_outline("drw",chox+47,126-this.cpu_draw_mean-6,10)
+ 
+  line(mhox+1,126-this.mem_mean,126,126-this.mem_mean,5)
+
+  -- containers
+  line(chox,   127,   chox+61,127,   0) -- bottom
+  line(chox,   127-32,chox+2, 127-32,0) -- 60 tick
+  line(chox,   127-64,chox+2, 127-64,0) -- 30 tick
+  line(chox,   127-64,chox,   127,   0) -- v left
+  line(chox+61,127-64,chox+61,127,   0) -- v right
+ 
+  line(mhox,127,   127,   127,   0) -- bottom
+  line(mhox,127-32,mhox+2,127-32,0) -- 1M tick
+  line(mhox,127-64,mhox+2,127-64,0) -- 2M tick
+  line(mhox,127-64,mhox,  127,   0) -- v left
+  line(127, 127-64,127,   127,   0) -- v right
+ 
+  print_outline("30",chox+4,127-66,8)
+  print_outline("60",chox+4,127-34,11)
+ 
+  print_outline("2m",mhox+4,127-66,8)
+  print_outline("1m",mhox+4,127-34,11)
+  
+  print_outline(stat(0).." k",mhox+3,127-7,7)
+  print_outline(flr(stat(1)*100).."%",chox+3,127-7,7)
  end
- 
-
- line(chox+1,126-cpu_mean,chox+60,126-cpu_mean,8)
- print_outline("total",chox+13,126-cpu_mean-6,8)
- 
- line(chox+1,126-cpu_update_mean,chox+60,126-cpu_update_mean,9)
- print_outline("upd",chox+34,126-cpu_update_mean-6,9)
- 
- line(chox+1,126-cpu_draw_mean,chox+60,126-cpu_draw_mean,10)
- print_outline("drw",chox+47,126-cpu_draw_mean-6,10)
- 
- 
- line(mhox+1,126-mem_mean,126,126-mem_mean,5)
-
- -- containers
- line(chox,   127,   chox+61,127,0)
- line(chox,   127-32,chox+2, 127-32,0)
- line(chox,   127-64,chox+2, 127-64,0)
- line(chox,   127-64,chox,   127,0)
- line(chox+61,127-64,chox+61,127,0)
- 
- line(mhox,127,   127, 127,7)
- line(mhox,127-32,mhox,127,7)
- line(127, 127-32,127, 127,7)
- 
- print_outline("30",chox+4,127-66,8)
- print_outline("60",chox+4,127-34,11)
- 
- print("mem: "..stat(0).." / 2048 kb",0,0,7)
- print("cpu: "..flr(stat(1)*100).."%",0,8,7)
-end
+}
+end -- create_profiler
 
 -->8
 fake_list={}
