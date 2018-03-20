@@ -3,6 +3,11 @@ version 16
 __lua__
 -- cpu mem profiler
 -- droune2001
+--[[
+todo
+* measure the memory consumption of the profiler.
+  render it a different color.
+]]
 
 function _init()
  profiler = create_profiler()

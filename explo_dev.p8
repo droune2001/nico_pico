@@ -3,6 +3,26 @@ version 16
 __lua__
 --explosion test
 --droune
+--[[
+todo
+* multiple emitters per particle system / fx
+* optimize simulation / do it once every other frame.
+  have the emitters specify their update rate?
+* less particles in the explosion.
+* split 4 fire burst into 4 emitters, with different length.
+* add central explo.
+* add rocks explo (up to 4)
+* think about how to handle multiple aligned
+  explosions with many aligned rocks. Do you treat
+  chain explosions in succession or simultaneously?
+  do you explode 1 rock or as many as there are reaching bombs?
+]]
+
+
+
+
+
+
 
 -- debug vars
 _explo_duration=0.25
@@ -158,26 +178,24 @@ end -- create_profiler
 function create_particle_system(max_nb_parts,px,py)
  local particle_system = {
   particles = {},
+  max_particles = max_nb_parts or 1000,
+  first_free_cell = 1, -- 0 if full
+  
   emitter = nil,
   emit_time_left = 0, -- put in emitters
-  max_particles = max_nb_parts or 1000,
-  nb_active_particles = 0,
-  first_free_cell = 1, -- 0 if full
-  x = px or 0,
-  y = py or 0,
+  nb_active_particles = 0, -- put in emitters
   is_active = false,
+  -- add: nb_emitters_alive.
   
-  allocate_particle = function(this,n)
-   return {
-    is_alive = false,
-    next_free_cell = n+1
-   }
-  end,
-  
+  x = px or 64,
+  y = py or 64,
+    
   init = function(this)
    this.is_active = true
    for i=1,this.max_particles do
-    add(this.particles, this:allocate_particle(i))
+    add(this.particles, 
+	    {is_alive = false,
+         next_free_cell = i+1})
    end
    this.particles[this.max_particles].next_free_cell = 0
   end,
@@ -217,6 +235,11 @@ function create_particle_system(max_nb_parts,px,py)
   end,
   
   draw = function(this)
+   -- all drawn one on top of the other,
+   -- no order of emitters.
+   -- maybe each emitter should have its own
+   -- particle array. derive from common emitter
+   -- with particle update code.
    for p in all(this.particles) do
     if p.is_alive then 
      p:draw()
@@ -232,58 +255,40 @@ function create_particle_system(max_nb_parts,px,py)
      -- pop head of list, list points to next
      local f = this.first_free_cell
      this.first_free_cell = this.particles[f].next_free_cell
-     this.particles[f] = e:spawn_particle(this.x,this.y)
+	 -- problem is here. we dont use the particle, we overwrite it!!!
+     --this.particles[f] = e:spawn_particle(this.x,this.y)
+	 e:spawn_particle(this.particles[f],this.x,this.y)
      num_to_emit -= 1
      this.nb_active_particles += 1
     end
    end
   end
  }
+ -- always put in here? or outside, called by client?
  particle_system:init()
  return particle_system
 end
 
-function create_omni_emitter()
- return {
-  n = 50,
-  
-  spawn_particle = function(this,cx,cy)
-   local r = rnd(25)+10
-   local theta = rnd(1)
-   return {
-    is_alive = true,
-    x = cx+4+rnd(4)-2,
-    y = cy+4+rnd(4)-2,
-    dx = r*cos(theta),
-    dy = r*sin(theta),
-    damp = 1,
-    col = 1+flr(rnd(15)), -- no 0
-    radius = 2+rnd(4),
-    age = rnd(5),
-    next_free_cell = 0, -- will be set upon dying
-    
-    draw = function(p)
-     palt(0,false)
-     circfill(p.x,p.y,p.radius+1,0)
-     circfill(p.x,p.y,p.radius,p.col)
-    end,
-    
-    update = function(p)
-     p.x += dt * p.dx
-     p.y += dt * p.dy
-    end
-   }
-  end
- }
+
+function create_rock_explo_emitter()
+-- todo
 end
 
+function create_bomb_emitter(x,y)
+-- todo
+end
 
+function create_fire_emitter(x,y,dirx,diry,length)
+-- todo
+end
 
 function create_quad_fire_emitter()
  return {
   n = _nb_particles_per_emission,
   
-  spawn_particle = function(e,cx,cy)
+  -- todo: takes a particle param "p"
+  -- use p.toto and no return statement.
+  spawn_particle = function(e,part,cx,cy)
    local dir = flr(rnd(4))/4 -- 4 quadrants for the sin/cos funcs
    --local speed = 150+rnd(25)
    
@@ -298,74 +303,72 @@ function create_quad_fire_emitter()
    --local life = .2+rnd(.6)
    local life = 0.7+rnd(0.2)
 
-   return {
-    is_alive = true,
-    x = cx+ox,
-    y = cy+oy,
-    vx = _ex2*speed*cos(dir),
-    vy = _ex2*speed*sin(dir),
+   -- fill preallocated particle
+   part.is_alive = true
+   part.x = cx+ox
+   part.y = cy+oy
+   part.vx = _ex2*speed*cos(dir)
+   part.vy = _ex2*speed*sin(dir)
     -- todo: add variability in speed
     -- slow external particles move more
     -- randomly than central high speed parts.
-    fx = 0,
-    fy = 0,
-    ax = 0,
-    ay = 0,
-    m = 1,
-    kd = _damp,
-    kl = _lift_factor, -- lift factor
-    --colors={10,9,9,8,8,8,13,13,13,13},
-    colors={10,9,9,8,13,13,13},
-    radius = .5+_ex2*rnd(3),
-    age = life,
-    max_age = life,
-    next_free_cell = 0, -- will be set upon dying
+   part.fx = 0
+   part.fy = 0
+   part.ax = 0
+   part.ay = 0
+   part.m = 1
+   part.kd = _damp
+   part.kl = _lift_factor -- lift factor
+    --colors={10,9,9,8,8,8,13,13,13,13}
+   part.colors={10,9,9,8,13,13,13}
+   part.radius = .5+_ex2*rnd(3)
+   part.age = life
+   part.max_age = life
+   part.next_free_cell = 0 -- will be set upon dying
     
-    draw = function(p)
-     -- color ramp by age
-     local color = p.colors[1+flr(#p.colors*(p.max_age-p.age)/p.max_age)]
-     if p.radius < 1.5 then
-      pset(p.x,p.y,color)
-     else
-      circfill(p.x,p.y,p.radius,color)
-     end
-     
-    end,
+   part.draw = function(p)
+    -- color ramp by age
+    local color = p.colors[1+flr(#p.colors*(p.max_age-p.age)/p.max_age)]
+    if p.radius < 1.5 then
+     pset(p.x,p.y,color)
+    else
+     circfill(p.x,p.y,p.radius,color)
+    end 
+   end
     
-    update = function(p)
+   part.update = function(p)
      
-     local age_pct = (p.max_age-p.age)/p.max_age
-     local lift = age_pct*age_pct
-     
-     -- accum forces. drag, gravity, ...
-     p.fx = 0
-     p.fy = 0
-     
-     -- drag
-     p.fx += -p.kd * p.vx
-     p.fy += -p.kd * p.vy
-     
-     -- go up when dying. smoke if lighter.
-     p.fy += -p.kl * lift
-     
-     p.ax = p.fx / p.m
-     p.ay = p.fy / p.m
-     
-     p.x += p.vx * dt
-     p.y += p.vy * dt
-     
-     p.vx += p.ax * dt
-     p.vy += p.ay * dt
-     
-    end
-   }
-  end
+    local age_pct = (p.max_age-p.age)/p.max_age
+    local lift = age_pct*age_pct
+    
+    -- accum forces. drag, gravity, ...
+    p.fx = 0
+    p.fy = 0
+    
+    -- drag
+    p.fx += -p.kd * p.vx
+    p.fy += -p.kd * p.vy
+    
+    -- go up when dying. smoke if lighter.
+    p.fy += -p.kl * lift
+    
+    p.ax = p.fx --/ p.m
+    p.ay = p.fy --/ p.m
+    
+    p.x += p.vx * dt
+    p.y += p.vy * dt
+    
+    p.vx += p.ax * dt
+    p.vy += p.ay * dt
+    
+   end -- update
+  end -- spawn_particle
  }
 end
 
 function start_explosion(x,y)
   -- new ps
-  ps = create_particle_system(1000,x,y)
+  ps = create_particle_system(400,x,y)
   -- insert emitters
   ps.emitter = create_quad_fire_emitter()
   ps.emit_time_left = _explo_duration -- duuration should be for each emitter
@@ -488,14 +491,14 @@ end
 function debug_draw()
  print("nb_fxs: "..#pss,0,0,8)
  for i=1,#pss do
-  print("fx["..i.."].nb_alive: "..pss[i].nb_active_particles,0,8*i,8)
+  --print("fx["..i.."].nb_alive: "..pss[i].nb_active_particles,0,8*i,8)
  end
  --print("shk_amnt: ".._cam_shk_amnt.." "..cam_shk_amnt,0,8,12)
  --print("shk_damp: ".._cam_shk_damp,0,16,12)
  --print("_init_speed: ".._init_speed,0,8,12)
  --print("_damp: ".._damp,0,16,12)
  --print("_explo_duration: ".._explo_duration,0,8,12)
- --print("_nb_parts_per_em: ".._nb_particles_per_emission,0,16,12)
+ print("_nb_parts_per_em: ".._nb_particles_per_emission,0,16,12)
  --print("_lift_factor: ".._lift_factor,0,16,12)
  
  -- black-to-white color ramp
