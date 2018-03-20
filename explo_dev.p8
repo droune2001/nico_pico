@@ -175,29 +175,20 @@ end -- create_profiler
 
 
 -->8
-function create_particle_system(max_nb_parts,px,py)
+function create_particle_system(px,py)
  local particle_system = {
-  particles = {},
-  max_particles = max_nb_parts or 1000,
-  first_free_cell = 1, -- 0 if full
-  
-  emitter = nil,
-  emit_time_left = 0, -- put in emitters
-  nb_active_particles = 0, -- put in emitters
-  is_active = false,
-  -- add: nb_emitters_alive.
-  
   x = px or 64,
   y = py or 64,
+  emitters = {},
+  nb_emitters_alive = 0,
+  is_active = false,
     
   init = function(this)
    this.is_active = true
-   for i=1,this.max_particles do
-    add(this.particles, 
-	    {is_alive = false,
-         next_free_cell = i+1})
+   -- todo: use foreach syntax with function
+   for e in all(this.emitters) do
+    e:init()
    end
-   this.particles[this.max_particles].next_free_cell = 0
   end,
   
   update = function(this)   
@@ -264,11 +255,33 @@ function create_particle_system(max_nb_parts,px,py)
    end
   end
  }
- -- always put in here? or outside, called by client?
- particle_system:init()
  return particle_system
 end
 
+-- todo: pass emit_time_left
+function create_emitter(max_nb_parts,cx,cy)
+ return {
+  x = cx or 0
+  y = cy or 0
+  particles = {},
+  max_particles = max_nb_parts or 100,
+  first_free_cell = 1, -- 0 if full
+  
+  emit_time_left = 0, -- put in emitters
+  nb_active_particles = 0, -- put in emitters
+  is_active = false,
+  
+  init = function(this)
+   this.is_active = true
+   for i=1,this.max_particles do
+    add(this.particles, 
+	    {is_alive = false,
+         next_free_cell = i+1})
+   end
+   this.particles[this.max_particles].next_free_cell = 0
+  end,
+ }
+end
 
 function create_rock_explo_emitter()
 -- todo
@@ -279,7 +292,11 @@ function create_bomb_emitter(x,y)
 end
 
 function create_fire_emitter(x,y,dirx,diry,length)
--- todo
+ -- create generic emitter
+ local e = create_emitter(300,x,y)
+ -- complete it with specifics
+ -- ...
+ return e
 end
 
 function create_quad_fire_emitter()
@@ -368,15 +385,29 @@ end
 
 function start_explosion(x,y)
   -- new ps
-  ps = create_particle_system(400,x,y)
+  ps = create_particle_system(x,y)
   -- insert emitters
-  ps.emitter = create_quad_fire_emitter()
-  ps.emit_time_left = _explo_duration -- duuration should be for each emitter
+  local em = create_quad_fire_emitter()
+  em.emit_time_left = _explo_duration
+  add(ps.emitters,em)
   
+  local fe_left = create_fire_emitter(0,0,-1,0,2)
+  fe_left.emit_time_left = _explo_duration
+  add(ps.emitters,fe_left)
+
+  local fe_right = create_fire_emitter(0,0,1,0,2)
+  fe_right.emit_time_left = _explo_duration
+  add(ps.emitters,fe_right)
+
+  local fe_top = create_fire_emitter(0,0,0,-1,2)
+  fe_top.emit_time_left = _explo_duration
+  add(ps.emitters,fe_top)
+
+  local fe_bottom = create_fire_emitter(0,0,0,1,2)
+  fe_bottom.emit_time_left = _explo_duration
+  add(ps.emitters,fe_bottom)
   
-  
-  
-  
+  ps:init()
   
   add(pss,ps)
 end
