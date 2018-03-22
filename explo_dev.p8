@@ -19,11 +19,6 @@ todo
 ]]
 
 
-
-
-
-
-
 -- debug vars
 _explo_duration=0.25
 _init_speed,_damp=300,9 --150,3
@@ -38,7 +33,10 @@ dt=.0166667
 max_dist_cells=1
 
 -->8
+-----------
 -- profiler
+-----------
+
 function print_outline(t,x,y,c,bc)
  color(bc or 0)
  print(t,x-1,y)print(t,x-1,y-1)print(t,x,y-1)print(t,x+1,y-1)
@@ -175,8 +173,12 @@ end -- create_profiler
 
 
 -->8
+------------------
+-- particle system
+------------------
+
 function create_particle_system(px,py)
- local particle_system = {
+ return {
   x = px or 64,
   y = py or 64,
   emitters = {},
@@ -191,7 +193,62 @@ function create_particle_system(px,py)
    end
   end,
   
-  update = function(this)   
+  update = function(this)
+   local any_still_active = false  
+   for e in all(this.emitters) do
+    e:update(this.x,this.y)
+    any_still_active = any_still_active or e.is_active
+   end
+   this.is_active = any_still_active
+  end,
+  
+  draw = function(self)
+   -- all drawn one on top of the other,
+   -- no order of emitters.
+   -- maybe each emitter should have its own
+   -- particle array. derive from common emitter
+   -- with particle update code.
+   for e in all(self.emitters) do
+    -- todo: add priority, or z-order
+    e:draw()
+   end
+  end
+ }
+end
+
+-- todo: pass emit_time_left
+function create_emitter(t,max_nb_parts,cx,cy)
+ return {
+  x = cx or 0,
+  y = cy or 0,
+  particles = {},
+  max_particles = max_nb_parts or 100,
+  first_free_cell = 1, -- 0 if full
+  
+  emit_time_left = t, -- put in emitters
+  nb_active_particles = 0, -- put in emitters
+  is_active = false,
+  
+  init = function(this)
+   this.is_active = true
+   for i=1,this.max_particles do
+    add(this.particles, 
+     {is_alive = false,
+         next_free_cell = i+1})
+   end
+   this.particles[this.max_particles].next_free_cell = 0
+  end,
+  
+  update = function(this,psx,psy)
+   
+   if this.emit_time_left > 0 then
+    this:emit(psx+this.x,psy+this.y)
+    this.emit_time_left -= dt
+    if this.emit_time_left - .001 < 0 then
+      this.emit_time_left = 0
+    end
+   end
+   
    for i,p in pairs(this.particles) do
     if p.is_alive then
      p.age -= dt
@@ -207,17 +264,8 @@ function create_particle_system(px,py)
     end
    end
 
-   if this.emit_time_left > 0 then
-    this:emit()
-    this.emit_time_left -= dt
-    if this.emit_time_left - .001 < 0 then
-      this.emit_time_left = 0
-    end
-   end
-   
    -- check for end of fx
    if this.nb_active_particles == 0 then
-    -- todo: for all emitters
     if this.emit_time_left == 0 then
      this.is_active = false
     end
@@ -225,61 +273,34 @@ function create_particle_system(px,py)
    end
   end,
   
-  draw = function(this)
-   -- all drawn one on top of the other,
-   -- no order of emitters.
-   -- maybe each emitter should have its own
-   -- particle array. derive from common emitter
-   -- with particle update code.
-   for p in all(this.particles) do
-    if p.is_alive then 
-     p:draw()
-    end
-   end
-  end,
-  
-  emit = function(this)
-   if this.emitter ~= nil then
-    local e = this.emitter
-    local num_to_emit = e.n
-    while this.first_free_cell > 0 and num_to_emit > 0 do
-     -- pop head of list, list points to next
-     local f = this.first_free_cell
-     this.first_free_cell = this.particles[f].next_free_cell
-	 -- problem is here. we dont use the particle, we overwrite it!!!
-     --this.particles[f] = e:spawn_particle(this.x,this.y)
-	 e:spawn_particle(this.particles[f],this.x,this.y)
+  -- move to specific emitter impl
+  emit = function(this,px,py)
+   local num_to_emit = this.n or 10
+   while this.first_free_cell > 0 and num_to_emit > 0 do
+    -- pop head of list, list points to next
+    local f = this.first_free_cell
+    this.first_free_cell = this.particles[f].next_free_cell
+    -- problem is here. we dont use the particle, we overwrite it!!!
+    --this.particles[f] = e:spawn_particle(this.x,this.y)
+    if this.spawn_particle ~= nil then 
+     this:spawn_particle(this.particles[f],px,py)
      num_to_emit -= 1
      this.nb_active_particles += 1
     end
    end
-  end
- }
- return particle_system
-end
-
--- todo: pass emit_time_left
-function create_emitter(max_nb_parts,cx,cy)
- return {
-  x = cx or 0
-  y = cy or 0
-  particles = {},
-  max_particles = max_nb_parts or 100,
-  first_free_cell = 1, -- 0 if full
-  
-  emit_time_left = 0, -- put in emitters
-  nb_active_particles = 0, -- put in emitters
-  is_active = false,
-  
-  init = function(this)
-   this.is_active = true
-   for i=1,this.max_particles do
-    add(this.particles, 
-	    {is_alive = false,
-         next_free_cell = i+1})
-   end
-   this.particles[this.max_particles].next_free_cell = 0
   end,
+  
+  draw = function(self)
+   if self.nb_active_particles > 0 then
+   -- todo: aray inst of linked list.
+   -- all active particles first.
+    for p in all(self.particles) do
+     if p.is_alive then 
+      p:draw()
+     end
+    end
+   end
+  end
  }
 end
 
@@ -293,19 +314,21 @@ end
 
 function create_fire_emitter(x,y,dirx,diry,length)
  -- create generic emitter
- local e = create_emitter(300,x,y)
+ local e = create_emitter(_explo_duration,300,x,y)
  -- complete it with specifics
  -- ...
  return e
 end
 
-function create_quad_fire_emitter()
- return {
-  n = _nb_particles_per_emission,
+function create_quad_fire_emitter(x,y)
+ -- create generic emitter
+ local e = create_emitter(_explo_duration,400,x,y)
+ -- complete it with specifics
+ e.n = _nb_particles_per_emission
   
-  -- todo: takes a particle param "p"
-  -- use p.toto and no return statement.
-  spawn_particle = function(e,part,cx,cy)
+ -- todo: takes a particle param "p"
+ -- use p.toto and no return statement.
+ e.spawn_particle = function(e,part,cx,cy)
    local dir = flr(rnd(4))/4 -- 4 quadrants for the sin/cos funcs
    --local speed = 150+rnd(25)
    
@@ -379,32 +402,28 @@ function create_quad_fire_emitter()
     p.vy += p.ay * dt
     
    end -- update
-  end -- spawn_particle
- }
+ end -- spawn_particle
+ 
+ return e
 end
 
 function start_explosion(x,y)
   -- new ps
   ps = create_particle_system(x,y)
   -- insert emitters
-  local em = create_quad_fire_emitter()
-  em.emit_time_left = _explo_duration
+  local em = create_quad_fire_emitter(0,0)
   add(ps.emitters,em)
   
   local fe_left = create_fire_emitter(0,0,-1,0,2)
-  fe_left.emit_time_left = _explo_duration
   add(ps.emitters,fe_left)
 
   local fe_right = create_fire_emitter(0,0,1,0,2)
-  fe_right.emit_time_left = _explo_duration
   add(ps.emitters,fe_right)
 
   local fe_top = create_fire_emitter(0,0,0,-1,2)
-  fe_top.emit_time_left = _explo_duration
   add(ps.emitters,fe_top)
 
   local fe_bottom = create_fire_emitter(0,0,0,1,2)
-  fe_bottom.emit_time_left = _explo_duration
   add(ps.emitters,fe_bottom)
   
   ps:init()
