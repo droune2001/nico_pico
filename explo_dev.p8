@@ -216,31 +216,27 @@ function create_particle_system(px,py)
  }
 end
 
--- todo: pass emit_time_left
 function create_emitter(t,max_nb_parts,cx,cy)
  return {
   x = cx or 0,
   y = cy or 0,
   particles = {},
   max_particles = max_nb_parts or 100,
-  first_free_cell = 1, -- 0 if full
+  nb_particles = 0,
   
   emit_time_left = t, -- put in emitters
-  nb_active_particles = 0, -- put in emitters
   is_active = false,
   
   init = function(this)
    this.is_active = true
    for i=1,this.max_particles do
-    add(this.particles, 
-     {is_alive = false,
-         next_free_cell = i+1})
+    add(this.particles,{is_alive = false}) -- todo: trade a bool for computation, if need be.
    end
-   this.particles[this.max_particles].next_free_cell = 0
   end,
   
   update = function(this,psx,psy)
    
+   -- emit
    if this.emit_time_left > 0 then
     this:emit(psx+this.x,psy+this.y)
     this.emit_time_left -= dt
@@ -249,6 +245,28 @@ function create_emitter(t,max_nb_parts,cx,cy)
     end
    end
    
+   -- update particles
+   for i=1,this.nb_particles do
+    local p = this.particles[i]
+    p.age -= dt
+    if p.age < 0 then
+     p.is_alive = 0 -- deprecated ?
+     -- swap p with the tail of acctive particles
+     -- note: dnt even need to put p at the end whn we
+     -- get rid of is_alive.
+     local tmp = this.particles[this.nb_particles]
+     this.particles[this.nb_particles] = p
+     this.particles[i] = tmp
+     tmp.age -= dt
+     -- todo: the swapped particle is no longer updated!!
+     -- and we are touching the index used in the for loop!!
+     -- use a while loop, abruti!
+     this.nb_particles -= 1
+    else
+     p:update()
+    end
+   end
+   --[[
    for i,p in pairs(this.particles) do
     if p.is_alive then
      p.age -= dt
@@ -263,9 +281,10 @@ function create_emitter(t,max_nb_parts,cx,cy)
      end
     end
    end
-
+   ]]
+   
    -- check for end of fx
-   if this.nb_active_particles == 0 then
+   if this.nb_particles == 0 then
     if this.emit_time_left == 0 then
      this.is_active = false
     end
@@ -276,29 +295,20 @@ function create_emitter(t,max_nb_parts,cx,cy)
   -- move to specific emitter impl
   emit = function(this,px,py)
    local num_to_emit = this.n or 10
-   while this.first_free_cell > 0 and num_to_emit > 0 do
+   while this.nb_particles < this.max_particles and num_to_emit > 0 do
     -- pop head of list, list points to next
-    local f = this.first_free_cell
-    this.first_free_cell = this.particles[f].next_free_cell
-    -- problem is here. we dont use the particle, we overwrite it!!!
-    --this.particles[f] = e:spawn_particle(this.x,this.y)
+    local f = this.nb_particles + 1
     if this.spawn_particle ~= nil then 
      this:spawn_particle(this.particles[f],px,py)
      num_to_emit -= 1
-     this.nb_active_particles += 1
+     this.nb_particles += 1
     end
    end
   end,
   
   draw = function(self)
-   if self.nb_active_particles > 0 then
-   -- todo: aray inst of linked list.
-   -- all active particles first.
-    for p in all(self.particles) do
-     if p.is_alive then 
-      p:draw()
-     end
-    end
+   for i=1,self.nb_particles do
+    self.particles[i]:draw()
    end
   end
  }
