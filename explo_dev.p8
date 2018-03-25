@@ -5,11 +5,9 @@ __lua__
 --droune
 --[[
 todo
-* multiple emitters per particle system / fx
 * optimize simulation / do it once every other frame.
   have the emitters specify their update rate?
 * less particles in the explosion.
-* split 4 fire burst into 4 emitters, with different length.
 * add central explo.
 * add rocks explo (up to 4)
 * think about how to handle multiple aligned
@@ -182,12 +180,10 @@ function create_particle_system(px,py)
   x = px or 64,
   y = py or 64,
   emitters = {},
-  nb_emitters_alive = 0,
   is_active = false,
     
   init = function(this)
    this.is_active = true
-   -- todo: use foreach syntax with function
    for e in all(this.emitters) do
     e:init()
    end
@@ -205,9 +201,6 @@ function create_particle_system(px,py)
   draw = function(self)
    -- all drawn one on top of the other,
    -- no order of emitters.
-   -- maybe each emitter should have its own
-   -- particle array. derive from common emitter
-   -- with particle update code.
    for e in all(self.emitters) do
     -- todo: add priority, or z-order
     e:draw()
@@ -224,7 +217,7 @@ function create_emitter(t,max_nb_parts,cx,cy)
   max_particles = max_nb_parts or 100,
   nb_particles = 0,
   
-  emit_time_left = t, -- put in emitters
+  emit_time_left = t,
   is_active = false,
   
   init = function(this)
@@ -246,42 +239,22 @@ function create_emitter(t,max_nb_parts,cx,cy)
    end
    
    -- update particles
-   for i=1,this.nb_particles do
+   local i=1
+   while i <= this.nb_particles do
     local p = this.particles[i]
     p.age -= dt
     if p.age < 0 then
-     p.is_alive = 0 -- deprecated ?
-     -- swap p with the tail of acctive particles
-     -- note: dnt even need to put p at the end whn we
-     -- get rid of is_alive.
+     p.is_alive = false -- deprecated ?
+     -- swap with last particle.
      local tmp = this.particles[this.nb_particles]
      this.particles[this.nb_particles] = p
      this.particles[i] = tmp
-     tmp.age -= dt
-     -- todo: the swapped particle is no longer updated!!
-     -- and we are touching the index used in the for loop!!
-     -- use a while loop, abruti!
      this.nb_particles -= 1
     else
      p:update()
+     i+=1
     end
    end
-   --[[
-   for i,p in pairs(this.particles) do
-    if p.is_alive then
-     p.age -= dt
-     if p.age < 0 then
-      p.is_alive = false
-      this.nb_active_particles -= 1
-      -- set as head of free list
-      p.next_free_cell = this.first_free_cell
-      this.first_free_cell = i
-     else
-      p:update()
-     end
-    end
-   end
-   ]]
    
    -- check for end of fx
    if this.nb_particles == 0 then
@@ -336,8 +309,6 @@ function create_quad_fire_emitter(x,y)
  -- complete it with specifics
  e.n = _nb_particles_per_emission
   
- -- todo: takes a particle param "p"
- -- use p.toto and no return statement.
  e.spawn_particle = function(e,part,cx,cy)
    local dir = flr(rnd(4))/4 -- 4 quadrants for the sin/cos funcs
    --local speed = 150+rnd(25)
@@ -366,15 +337,13 @@ function create_quad_fire_emitter(x,y)
    part.fy = 0
    part.ax = 0
    part.ay = 0
-   part.m = 1
-   part.kd = _damp
-   part.kl = _lift_factor -- lift factor
+   part.kd = _damp -- put in emitter, same for all particles
+   part.kl = _lift_factor -- put in emitter, same for all particles
     --colors={10,9,9,8,8,8,13,13,13,13}
    part.colors={10,9,9,8,13,13,13}
    part.radius = .5+_ex2*rnd(3)
    part.age = life
    part.max_age = life
-   part.next_free_cell = 0 -- will be set upon dying
     
    part.draw = function(p)
     -- color ramp by age
@@ -423,7 +392,7 @@ function start_explosion(x,y)
   -- insert emitters
   local em = create_quad_fire_emitter(0,0)
   add(ps.emitters,em)
-  
+--[[  
   local fe_left = create_fire_emitter(0,0,-1,0,2)
   add(ps.emitters,fe_left)
 
@@ -435,7 +404,7 @@ function start_explosion(x,y)
 
   local fe_bottom = create_fire_emitter(0,0,0,1,2)
   add(ps.emitters,fe_bottom)
-  
+  ]]
   ps:init()
   
   add(pss,ps)
@@ -446,7 +415,7 @@ function update_fxs()
  for ps in all(pss) do
   ps:update()
   if not ps.is_active then
-   del(pss, ps)
+   del(pss,ps)
   end
  end
 end
@@ -550,8 +519,12 @@ end
 
 function debug_draw()
  print("nb_fxs: "..#pss,0,0,8)
+ local y=8
  for i=1,#pss do
-  --print("fx["..i.."].nb_alive: "..pss[i].nb_active_particles,0,8*i,8)
+  print("fx["..i.."].nb_emitters: "..#pss[i].emitters,0,y,8) y+=8
+  for j=1,#pss[i].emitters do
+   print("  e["..j.."].nb_particles_alive: "..pss[i].emitters[j].nb_particles,0,y,8) y+=8
+  end
  end
  --print("shk_amnt: ".._cam_shk_amnt.." "..cam_shk_amnt,0,8,12)
  --print("shk_damp: ".._cam_shk_damp,0,16,12)
@@ -560,29 +533,6 @@ function debug_draw()
  --print("_explo_duration: ".._explo_duration,0,8,12)
  print("_nb_parts_per_em: ".._nb_particles_per_emission,0,16,12)
  --print("_lift_factor: ".._lift_factor,0,16,12)
- 
- -- black-to-white color ramp
- local colors={0,8,9,10}
- 
- for i=0,6 do
-  for j=0,6 do
-   local ox = i-3
-   local oy = j-3
-   local ex = abs(ox*oy)/(3*3+1) -- excentricity: 0 center, 1 corner
-   local ex2 = ex*ex
-   local _ex = .99-ex
-   local _ex2 = _ex*_ex
-   
-   local ex_col = colors[1+flr(#colors * ex)]
-   local ex2_col = colors[1+flr(#colors * ex2)]
-   local _ex_col = colors[1+flr(#colors * _ex)]
-   local _ex2_col = colors[1+flr(#colors * _ex2)]
-   pset(10+ox,120+oy,ex_col)
-   pset(20+ox,120+oy,ex2_col)
-   pset(30+ox,120+oy,_ex_col)
-   pset(40+ox,120+oy,_ex2_col)
-  end
- end
  
 end
 __gfx__
