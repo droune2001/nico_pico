@@ -174,6 +174,30 @@ end -- create_profiler
 ------------------
 -- particle system
 ------------------
+i_ps = {
+  init = function(ps)
+   ps.is_active = true
+   for e in all(ps.emitters) do
+    e:init()
+   end
+  end,
+  update = function(ps)
+   local any_still_active = false  
+   for e in all(ps.emitters) do
+    e:update(ps.x,ps.y)
+    any_still_active = any_still_active or e.is_active
+   end
+   ps.is_active = any_still_active
+  end,
+  draw = function(ps)
+   -- all drawn one on top of the other,
+   -- no order of emitters.
+   for e in all(ps.emitters) do
+    -- todo: add priority, or z-order
+    e:draw()
+   end
+  end
+}
 
 function create_particle_system(px,py)
  return {
@@ -181,34 +205,76 @@ function create_particle_system(px,py)
   y = py or 64,
   emitters = {},
   is_active = false,
-    
-  init = function(this)
-   this.is_active = true
-   for e in all(this.emitters) do
-    e:init()
-   end
-  end,
-  
-  update = function(this)
-   local any_still_active = false  
-   for e in all(this.emitters) do
-    e:update(this.x,this.y)
-    any_still_active = any_still_active or e.is_active
-   end
-   this.is_active = any_still_active
-  end,
-  
-  draw = function(self)
-   -- all drawn one on top of the other,
-   -- no order of emitters.
-   for e in all(self.emitters) do
-    -- todo: add priority, or z-order
-    e:draw()
-   end
-  end
+  init = i_ps.init,
+  update = i_ps.update,
+  draw = i_ps.draw
  }
 end
 
+i_emitter = {
+  init = function(e)
+   e.is_active = true
+   for i=1,e.max_particles do
+    add(e.particles,{is_alive = false}) -- todo: trade a bool for computation, if need be.
+   end
+  end,
+  update = function(e,psx,psy)
+   
+   -- emit
+   if e.emit_time_left > 0 then
+    e:emit(psx+e.x,psy+e.y)
+    e.emit_time_left -= dt
+    if e.emit_time_left - .001 < 0 then
+      e.emit_time_left = 0
+    end
+   end
+   
+   -- update particles
+   local i=1
+   while i <= e.nb_particles do
+    local p = e.particles[i]
+    p.age -= dt
+    if p.age < 0 then
+     p.is_alive = false -- deprecated ?
+     -- swap with last particle.
+     local tmp = e.particles[e.nb_particles]
+     e.particles[e.nb_particles] = p
+     e.particles[i] = tmp
+     e.nb_particles -= 1
+    else
+     p:update()
+     i+=1
+    end
+   end
+   
+   -- check for end of fx
+   if e.nb_particles == 0 then
+    if e.emit_time_left == 0 then
+     e.is_active = false
+    end
+    -- +check if not in pre-emit state.
+   end
+  end,
+  -- move to specific emitter impl
+  emit = function(e,px,py)
+   local num_to_emit = e.n or 10
+   while e.nb_particles < e.max_particles and num_to_emit > 0 do
+    -- pop head of list, list points to next
+    local f = e.nb_particles + 1
+    if e.spawn_particle ~= nil then 
+     e:spawn_particle(e.particles[f],px,py)
+     num_to_emit -= 1
+     e.nb_particles += 1
+    end
+   end
+  end,  
+  draw = function(e)
+   for i=1,e.nb_particles do
+    e.particles[i]:draw()
+   end
+  end
+}
+ 
 function create_emitter(t,max_nb_parts,cx,cy)
  return {
   x = cx or 0,
@@ -219,71 +285,10 @@ function create_emitter(t,max_nb_parts,cx,cy)
   
   emit_time_left = t,
   is_active = false,
-  
-  init = function(this)
-   this.is_active = true
-   for i=1,this.max_particles do
-    add(this.particles,{is_alive = false}) -- todo: trade a bool for computation, if need be.
-   end
-  end,
-  
-  update = function(this,psx,psy)
-   
-   -- emit
-   if this.emit_time_left > 0 then
-    this:emit(psx+this.x,psy+this.y)
-    this.emit_time_left -= dt
-    if this.emit_time_left - .001 < 0 then
-      this.emit_time_left = 0
-    end
-   end
-   
-   -- update particles
-   local i=1
-   while i <= this.nb_particles do
-    local p = this.particles[i]
-    p.age -= dt
-    if p.age < 0 then
-     p.is_alive = false -- deprecated ?
-     -- swap with last particle.
-     local tmp = this.particles[this.nb_particles]
-     this.particles[this.nb_particles] = p
-     this.particles[i] = tmp
-     this.nb_particles -= 1
-    else
-     p:update()
-     i+=1
-    end
-   end
-   
-   -- check for end of fx
-   if this.nb_particles == 0 then
-    if this.emit_time_left == 0 then
-     this.is_active = false
-    end
-    -- +check if not in pre-emit state.
-   end
-  end,
-  
-  -- move to specific emitter impl
-  emit = function(this,px,py)
-   local num_to_emit = this.n or 10
-   while this.nb_particles < this.max_particles and num_to_emit > 0 do
-    -- pop head of list, list points to next
-    local f = this.nb_particles + 1
-    if this.spawn_particle ~= nil then 
-     this:spawn_particle(this.particles[f],px,py)
-     num_to_emit -= 1
-     this.nb_particles += 1
-    end
-   end
-  end,
-  
-  draw = function(self)
-   for i=1,self.nb_particles do
-    self.particles[i]:draw()
-   end
-  end
+  init = i_emitter.init,
+  update = i_emitter.update,
+  emit = i_emitter.emit,
+  draw = i_emitter.draw
  }
 end
 
@@ -303,12 +308,72 @@ function create_fire_emitter(x,y,dirx,diry,length)
  return e
 end
 
+i_fire_particle = {
+ draw = function(p)
+  -- color ramp by age
+  local color = p.colors[1+flr(#p.colors*(p.max_age-p.age)/p.max_age)]
+  if p.radius < 1.5 then
+   pset(p.x,p.y,color)
+  else
+   circfill(p.x,p.y,p.radius,color)
+  end 
+ end,   
+ -- put in particle, use as a clojure with e.kd and e.kl access
+ update = function(p,kd,kl)
+   
+  local age_pct = (p.max_age-p.age)/p.max_age
+  local lift = age_pct*age_pct
+  
+  -- accum forces. drag, gravity, ...
+  local fx = 0
+  local fy = 0
+  
+  -- drag
+  fx += -kd * p.vx
+  fy += -kd * p.vy
+  
+  -- go up when dying. smoke if lighter.
+  fy += -kl * lift
+  
+  --p.ax = p.fx --/ p.m
+  --p.ay = p.fy --/ p.m
+  
+  p.x += p.vx * dt
+  p.y += p.vy * dt
+  
+  p.vx += fx * dt --p.ax * dt
+  p.vy += fy * dt --p.ay * dt
+  
+ end -- update
+}
+
 function create_quad_fire_emitter(x,y)
  -- create generic emitter
  local e = create_emitter(_explo_duration,400,x,y)
  -- complete it with specifics
  e.n = _nb_particles_per_emission
-  
+ --colors={10,9,9,8,8,8,13,13,13,13}
+ e.pcolors = {10,9,9,8,13,13,13}
+ e.kd = _damp
+ e.kl = _lift_factor
+   
+ -- replace e.draw
+ e.draw = function(e)
+  local colors = e.pcolors -- one lookup for all particles
+  local nb_colors = #colors
+  local particles = e.particles
+  for i=1,e.nb_particles do
+   local p = particles[i]
+   -- color ramp by age
+   local color = colors[1+flr(nb_colors*(p.max_age-p.age)/p.max_age)]
+   if p.radius < 1.5 then
+    pset(p.x,p.y,color)
+   else
+    circfill(p.x,p.y,p.radius,color)
+   end 
+  end
+ end
+
  e.spawn_particle = function(e,part,cx,cy)
    local dir = flr(rnd(4))/4 -- 4 quadrants for the sin/cos funcs
    --local speed = 150+rnd(25)
@@ -333,54 +398,18 @@ function create_quad_fire_emitter(x,y)
     -- todo: add variability in speed
     -- slow external particles move more
     -- randomly than central high speed parts.
-   part.fx = 0
-   part.fy = 0
-   part.ax = 0
-   part.ay = 0
-   part.kd = _damp -- put in emitter, same for all particles
-   part.kl = _lift_factor -- put in emitter, same for all particles
-    --colors={10,9,9,8,8,8,13,13,13,13}
-   part.colors={10,9,9,8,13,13,13}
+--   part.fx = 0 -- no need, i reset it to 0 on each update
+--   part.fy = 0 -- it is only a temp var
+   --part.ax = 0
+   --part.ay = 0
    part.radius = .5+_ex2*rnd(3)
    part.age = life
    part.max_age = life
     
-   part.draw = function(p)
-    -- color ramp by age
-    local color = p.colors[1+flr(#p.colors*(p.max_age-p.age)/p.max_age)]
-    if p.radius < 1.5 then
-     pset(p.x,p.y,color)
-    else
-     circfill(p.x,p.y,p.radius,color)
-    end 
-   end
-    
+   part.draw = i_fire_particle.draw
    part.update = function(p)
-     
-    local age_pct = (p.max_age-p.age)/p.max_age
-    local lift = age_pct*age_pct
-    
-    -- accum forces. drag, gravity, ...
-    p.fx = 0
-    p.fy = 0
-    
-    -- drag
-    p.fx += -p.kd * p.vx
-    p.fy += -p.kd * p.vy
-    
-    -- go up when dying. smoke if lighter.
-    p.fy += -p.kl * lift
-    
-    p.ax = p.fx --/ p.m
-    p.ay = p.fy --/ p.m
-    
-    p.x += p.vx * dt
-    p.y += p.vy * dt
-    
-    p.vx += p.ax * dt
-    p.vy += p.ay * dt
-    
-   end -- update
+    i_fire_particle.update(p,e.kd,e.kl)
+   end
  end -- spawn_particle
  
  return e
