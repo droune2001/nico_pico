@@ -21,7 +21,8 @@ todo
 _explo_duration=0.25
 _init_speed,_damp=300,9 --150,3
 _lift_factor=100
-_nb_particles_per_emission=25
+-- 7 gives me 105 particles peak, and good perf.
+_nb_particles_per_emission=7--10--15--25
 _cam_shk_amnt = 6
 _cam_shk_damp = .7
 
@@ -230,19 +231,23 @@ i_emitter = {
    end
    
    -- update particles
+   local e_particles = e.particles
+   local e_nb_particles = e.nb_particles
+   local p_update = e_nb_particles > 0 and e_particles[1].update or nil
    local i=1
-   while i <= e.nb_particles do
-    local p = e.particles[i]
+   while i <= e_nb_particles do
+    local p = e_particles[i]
     p.age -= dt
     if p.age < 0 then
      p.is_alive = false -- deprecated ?
      -- swap with last particle.
-     local tmp = e.particles[e.nb_particles]
-     e.particles[e.nb_particles] = p
-     e.particles[i] = tmp
-     e.nb_particles -= 1
+     local tmp = e_particles[e_nb_particles]
+     e_particles[e_nb_particles] = p
+     e_particles[i] = tmp
+     e_nb_particles -= 1
     else
-     p:update()
+     --p:update()
+     p_update(p)
      i+=1
     end
    end
@@ -254,23 +259,20 @@ i_emitter = {
     end
     -- +check if not in pre-emit state.
    end
+   
+   e.nb_particles = e_nb_particles
+   
   end,
   -- move to specific emitter impl
   emit = function(e,px,py)
+   local e_spawn_particle = e.spawn_particle
    local num_to_emit = e.n or 10
    while e.nb_particles < e.max_particles and num_to_emit > 0 do
     -- pop head of list, list points to next
     local f = e.nb_particles + 1
-    if e.spawn_particle ~= nil then 
-     e:spawn_particle(e.particles[f],px,py)
-     num_to_emit -= 1
-     e.nb_particles += 1
-    end
-   end
-  end,  
-  draw = function(e)
-   for i=1,e.nb_particles do
-    e.particles[i]:draw()
+    e_spawn_particle(e,e.particles[f],px,py)
+    num_to_emit -= 1
+    e.nb_particles += 1
    end
   end
 }
@@ -309,41 +311,25 @@ function create_fire_emitter(x,y,dirx,diry,length)
 end
 
 i_fire_particle = {
- draw = function(p)
-  -- color ramp by age
-  local color = p.colors[1+flr(#p.colors*(p.max_age-p.age)/p.max_age)]
-  if p.radius < 1.5 then
-   pset(p.x,p.y,color)
-  else
-   circfill(p.x,p.y,p.radius,color)
-  end 
- end,   
  -- put in particle, use as a clojure with e.kd and e.kl access
  update = function(p,kd,kl)
-   
-  local age_pct = (p.max_age-p.age)/p.max_age
+  
+  local px = p.x
+  local py = p.y
+  local pvx = p.vx
+  local pvy = p.vy
+  local age_pct = (p.max_age-p.age)*p.inv_max_age
   local lift = age_pct*age_pct
   
-  -- accum forces. drag, gravity, ...
-  local fx = 0
-  local fy = 0
+  -- drag + vertical lift
+  local fx = -kd * pvx
+  local fy = -kd * pvy - kl * lift
   
-  -- drag
-  fx += -kd * p.vx
-  fy += -kd * p.vy
+  p.x = px + pvx * dt
+  p.y = py + pvy * dt
   
-  -- go up when dying. smoke if lighter.
-  fy += -kl * lift
-  
-  --p.ax = p.fx --/ p.m
-  --p.ay = p.fy --/ p.m
-  
-  p.x += p.vx * dt
-  p.y += p.vy * dt
-  
-  p.vx += fx * dt --p.ax * dt
-  p.vy += fy * dt --p.ay * dt
-  
+  p.vx = pvx + fx * dt
+  p.vy = pvy + fy * dt
  end -- update
 }
 
@@ -365,7 +351,8 @@ function create_quad_fire_emitter(x,y)
   for i=1,e.nb_particles do
    local p = particles[i]
    -- color ramp by age
-   local color = colors[1+flr(nb_colors*(p.max_age-p.age)/p.max_age)]
+   local color = colors[1+flr(nb_colors*(p.max_age-p.age)*p.inv_max_age)]
+   -- todo: radius evolve with age!
    if p.radius < 1.5 then
     pset(p.x,p.y,color)
    else
@@ -378,12 +365,12 @@ function create_quad_fire_emitter(x,y)
    local dir = flr(rnd(4))/4 -- 4 quadrants for the sin/cos funcs
    --local speed = 150+rnd(25)
    
-   local ox = rnd(4)-2+rnd(2)-1 -- -3,3
-   local oy = rnd(4)-2+rnd(2)-1 -- -3,3
-   local ex = abs(ox*oy)/(3*3+1) -- excentricity: 0 center, 1 corner
-   local ex2 = ex*ex
-   local _ex = .99-ex -- inv excentricity. 
-   local _ex2 = _ex*_ex
+   local ox = rnd(6)-3 -- -3,3
+   local oy = rnd(6)-3 -- -3,3
+   local ex = abs(ox*oy)*0.1--/(3*3+1) -- excentricity: 0 center, 1 corner
+   --local ex2 = ex*ex
+   --local _ex = .99-ex -- inv excentricity. 
+   local _ex2 = (.99-ex)*(.99-ex)--_ex*_ex
 
    local speed = _init_speed+rnd(0.15*_init_speed)
    --local life = .2+rnd(.6)
@@ -395,18 +382,15 @@ function create_quad_fire_emitter(x,y)
    part.y = cy+oy
    part.vx = _ex2*speed*cos(dir)
    part.vy = _ex2*speed*sin(dir)
-    -- todo: add variability in speed
-    -- slow external particles move more
-    -- randomly than central high speed parts.
---   part.fx = 0 -- no need, i reset it to 0 on each update
---   part.fy = 0 -- it is only a temp var
-   --part.ax = 0
-   --part.ay = 0
    part.radius = .5+_ex2*rnd(3)
    part.age = life
    part.max_age = life
+   part.inv_max_age = 1./life
+    -- todo: add variability in speed
+    -- slow external particles move more
+    -- randomly than central high speed parts.
     
-   part.draw = i_fire_particle.draw
+   --part.draw = i_fire_particle.draw
    part.update = function(p)
     i_fire_particle.update(p,e.kd,e.kl)
    end
