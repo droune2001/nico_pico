@@ -136,7 +136,7 @@ tweak_vars = {
  var_list = {},
  
  add_tweak_var = function( tv, var_name, viz_name, incr )
-  one_var = { vn=var_name, vin=viz_name, i=incr }
+  local one_var = { vn=var_name, vin=viz_name, i=incr }
   add(tv.var_list,one_var)
  end,
  
@@ -162,6 +162,10 @@ tweak_vars = {
   if btnp(1) then
    g_vars[tv.var_list[tv.current].vn] += tv.var_list[tv.current].i
   end
+  
+  if btnp(4) then
+   tv:dump_to_clipboard()
+  end
  end,
  
  draw = function(tv)
@@ -175,6 +179,12 @@ tweak_vars = {
  
  dump_to_clipboard = function(tv)
   -- print g_vars object with name and values, to clipboard
+  local str = "g_vars = {"
+  for v in all(tv.var_list) do
+   str = str.."\""..v.vn.."\" = "..g_vars[v.vn]..","
+  end
+  str = str.."}"
+  printh(str, "@clip")
   -- find special clip command @clip ???
  end
 }
