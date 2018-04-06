@@ -123,16 +123,76 @@ function on_test_checkable_button(chkd)
 end
 
 
+-------------------------
+-- var list
+-------------------------
+g_vars = {
+ nb_part_emit = 25,
+ life = 1.5 
+}
+
+tweak_vars = {
+ current = 1,
+ var_list = {},
+ 
+ add_tweak_var = function( tv, var_name, viz_name, incr )
+  one_var = { vn=var_name, vin=viz_name, i=incr }
+  add(tv.var_list,one_var)
+ end,
+ 
+ update = function(tv)
+  if btnp(2) then
+   tv.current += 1
+   if tv.current == #tv.var_list + 1 then
+    tv.current = 1
+   end
+  end
+  
+  if btnp(3) then
+   tv.current -= 1
+   if tv.current == 0 then
+    tv.current = #tv.var_list
+   end
+  end
+  
+  if btnp(0) then
+   g_vars[tv.var_list[tv.current].vn] -= tv.var_list[tv.current].i
+  end
+  
+  if btnp(1) then
+   g_vars[tv.var_list[tv.current].vn] += tv.var_list[tv.current].i
+  end
+ end,
+ 
+ draw = function(tv)
+  -- draw list of viz_name and value
+  for k,v in pairs(tv.var_list) do
+   print(v.vin..": <"..g_vars[v.vn]..">",0,(k-1)*8, k == tv.current and 8 or 7)
+  end
+  -- draw current in bold
+  -- scroll view depending on current and direction and distance to brders
+ end,
+ 
+ dump_to_clipboard = function(tv)
+  -- print g_vars object with name and values, to clipboard
+  -- find special clip command @clip ???
+ end
+}
+
 function _init()
  mouse.init()
  add(buttons,create_button(0,0,"test",4,on_test_button))
  add(buttons,create_button(0,10,"test_chkbl",8,on_test_checkable_button,true))
  add(buttons,create_button(0,20,"test",12,on_test_button))
  add(buttons,create_button(0,30,"test_chkbl",13,on_test_checkable_button,true))
+ 
+ tweak_vars:add_tweak_var( "nb_part_emit", "emit num", 1 )
+ tweak_vars:add_tweak_var( "life", "liffe", 0.1 )
 end
 
 function _update60()
  mouse:update()
+ tweak_vars:update()
 end
 
 function _draw()
@@ -144,6 +204,11 @@ function _draw()
   print("x:"..x.." y:"..y.." b:"..b, 0,120,7)
   
   draw_buttons()
+  
+  tweak_vars:draw()
+  
+  print(g_vars.nb_part_emit.." "..g_vars.life,64,64,9)
+  
   
   spr(0,x,y)
 end
