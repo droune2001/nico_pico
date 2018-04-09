@@ -18,13 +18,13 @@ todo
 
 
 -- debug vars
-_explo_duration=0.25
-_init_speed,_damp=300,9 --150,3
-_lift_factor=100
+--_explo_duration=0.25
+--_init_speed,_damp=300,9 --150,3
+--_lift_factor=100
 -- 7 gives me 105 particles peak, and good perf.
-_nb_particles_per_emission=7--10--15--25
-_cam_shk_amnt = 6
-_cam_shk_damp = .7
+--_nb_particles_per_emission=7--10--15--25
+--_cam_shk_amnt = 6
+--_cam_shk_damp = .7
 
 t=0
 dt=.0166667
@@ -172,6 +172,79 @@ end -- create_profiler
 
 
 -->8
+--------------
+-- tweak vars
+--------------
+g_vars = {
+ explo_duration=0.25,
+ init_speed=300,
+ damp=9, --150,3
+ lift_factor=100,
+ -- 7 gives me 105 particles peak, and good perf.
+ nb_particles_per_emission=7,--10--15--25
+ cam_shk_amnt = 6,
+ cam_shk_damp = .7,
+}
+
+tweak_vars = {
+ current = 1,
+ var_list = {},
+ 
+ add_tweak_var = function( tv, var_name, viz_name, incr )
+  local one_var = { vn=var_name, vin=viz_name, i=incr }
+  add(tv.var_list,one_var)
+ end,
+ 
+ update = function(tv)
+  if btnp(2) then
+   tv.current += 1
+   if tv.current == #tv.var_list + 1 then
+    tv.current = 1
+   end
+  end
+  
+  if btnp(3) then
+   tv.current -= 1
+   if tv.current == 0 then
+    tv.current = #tv.var_list
+   end
+  end
+  
+  if btnp(0) then
+   g_vars[tv.var_list[tv.current].vn] -= tv.var_list[tv.current].i
+  end
+  
+  if btnp(1) then
+   g_vars[tv.var_list[tv.current].vn] += tv.var_list[tv.current].i
+  end
+  
+  if btnp(4) then
+   tv:dump_to_clipboard()
+  end
+ end,
+ 
+ draw = function(tv)
+  -- draw list of viz_name and value
+  for k,v in pairs(tv.var_list) do
+   print(v.vin..": <"..g_vars[v.vn]..">",0,(k-1)*8, k == tv.current and 8 or 7)
+  end
+  -- draw current in bold
+  -- scroll view depending on current and direction and distance to brders
+ end,
+ 
+ dump_to_clipboard = function(tv)
+  -- print g_vars object with name and values, to clipboard
+  local str = "g_vars = {"
+  for v in all(tv.var_list) do
+   str = str.."\""..v.vn.."\" = "..g_vars[v.vn]..","
+  end
+  str = str.."}"
+  printh(str, "@clip")
+  -- find special clip command @clip ???
+ end
+}
+
+-->8
 ------------------
 -- particle system
 ------------------
@@ -304,7 +377,7 @@ end
 
 function create_fire_emitter(x,y,dirx,diry,length)
  -- create generic emitter
- local e = create_emitter(_explo_duration,300,x,y)
+ local e = create_emitter(g_vars.explo_duration,300,x,y)
  -- complete it with specifics
  -- ...
  return e
@@ -335,13 +408,13 @@ i_fire_particle = {
 
 function create_quad_fire_emitter(x,y)
  -- create generic emitter
- local e = create_emitter(_explo_duration,400,x,y)
+ local e = create_emitter(g_vars.explo_duration,400,x,y)
  -- complete it with specifics
- e.n = _nb_particles_per_emission
+ e.n = g_vars.nb_particles_per_emission
  --colors={10,9,9,8,8,8,13,13,13,13}
  e.pcolors = {10,9,9,8,13,13,13}
- e.kd = _damp
- e.kl = _lift_factor
+ e.kd = g_vars.damp
+ e.kl = g_vars.lift_factor
    
  -- replace e.draw
  e.draw = function(e)
@@ -372,7 +445,7 @@ function create_quad_fire_emitter(x,y)
    --local _ex = .99-ex -- inv excentricity. 
    local _ex2 = (.99-ex)*(.99-ex)--_ex*_ex
 
-   local speed = _init_speed+rnd(0.15*_init_speed)
+   local speed = g_vars.init_speed+rnd(0.15*g_vars.init_speed)
    --local life = .2+rnd(.6)
    local life = 0.7+rnd(0.2)
 
@@ -466,47 +539,34 @@ function _init()
  profiler = create_profiler()
  profiler:init()
  pss={}
+ 
+ tweak_vars:add_tweak_var("explo_duration","ed",0.1)
+ tweak_vars:add_tweak_var("init_speed","is",10)
+ tweak_vars:add_tweak_var("damp","d",0.1)
+ tweak_vars:add_tweak_var("lift_factor","lf",1)
+ tweak_vars:add_tweak_var("nb_particles_per_emission","nbp",1)
+ tweak_vars:add_tweak_var("cam_shk_amnt","ska",1)
+ tweak_vars:add_tweak_var("cam_shk_damp","skd",0.1)
 end
 
 function _update60()
 
  t+=dt
  
--- if btnp(0) then _cam_shk_damp += .1 end
--- if btnp(1) then _cam_shk_damp -= .1 end
-
--- if btnp(2) then _cam_shk_amnt += 1 end
--- if btnp(3) then _cam_shk_amnt -= 1 end
-
--- if btnp(0) then _init_speed += 10 end
--- if btnp(1) then _init_speed -= 10 end
-
--- if btnp(2) then _damp += .1 end
--- if btnp(3) then _damp -= .1 end
-
--- if btnp(0) then _explo_duration -= .1 end
--- if btnp(1) then _explo_duration += .1 end
-
- if btnp(0) then _lift_factor -= 1 end
- if btnp(1) then _lift_factor += 1 end
-
- if btnp(2) then _nb_particles_per_emission -= 1 end
- if btnp(3) then _nb_particles_per_emission += 1 end
-
  if btnp(4) then 
-  start_screen_shake(_cam_shk_amnt,_cam_shk_damp) 
+  start_screen_shake(g_vars.cam_shk_amnt,g_vars.cam_shk_damp) 
   start_explosion(64+4, 64-4)
  end
  
  if btnp(5) then 
-  start_screen_shake(_cam_shk_amnt,_cam_shk_damp) 
+  start_screen_shake(g_vars.cam_shk_amnt,g_vars.cam_shk_damp) 
   start_explosion(64+rnd(50), 64+rnd(50))
  end
  
  
  update_fxs()
  update_camera_shake()
- 
+ tweak_vars:update()
  profiler:update()
 end
 
@@ -517,6 +577,7 @@ function _draw()
  draw_fxs()
  debug_draw()
  profiler:draw()
+ tweak_vars:draw()
 end
 
 
@@ -539,14 +600,6 @@ function debug_draw()
    print("  e["..j.."].nb_particles_alive: "..pss[i].emitters[j].nb_particles,0,y,8) y+=8
   end
  end
- --print("shk_amnt: ".._cam_shk_amnt.." "..cam_shk_amnt,0,8,12)
- --print("shk_damp: ".._cam_shk_damp,0,16,12)
- --print("_init_speed: ".._init_speed,0,8,12)
- --print("_damp: ".._damp,0,16,12)
- --print("_explo_duration: ".._explo_duration,0,8,12)
- print("_nb_parts_per_em: ".._nb_particles_per_emission,0,16,12)
- --print("_lift_factor: ".._lift_factor,0,16,12)
- 
 end
 __gfx__
 00000000ffffffffffffffffffffffff11dfffff11111111ff111111111111110000000000000000000000000000000000000000000000000000000000000000
