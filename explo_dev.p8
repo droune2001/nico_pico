@@ -16,16 +16,6 @@ todo
   do you explode 1 rock or as many as there are reaching bombs?
 ]]
 
-
--- debug vars
---_explo_duration=0.25
---_init_speed,_damp=300,9 --150,3
---_lift_factor=100
--- 7 gives me 105 particles peak, and good perf.
---_nb_particles_per_emission=7--10--15--25
---_cam_shk_amnt = 6
---_cam_shk_damp = .7
-
 t=0
 dt=.0166667
 
@@ -175,35 +165,24 @@ end -- create_profiler
 --------------
 -- tweak vars
 --------------
-g_vars = {
- explo_duration=0.25,
- init_speed=300,
- damp=9, --150,3
- lift_factor=100,
- -- 7 gives me 105 particles peak, and good perf.
- nb_particles_per_emission=7,--10--15--25
- cam_shk_amnt = 6,
- cam_shk_damp = .7,
-}
-
 tweak_vars = {
  current = 1,
  var_list = {},
  
- add_tweak_var = function( tv, var_name, viz_name, incr )
+ add = function( tv, var_name, viz_name, incr )
   local one_var = { vn=var_name, vin=viz_name, i=incr }
   add(tv.var_list,one_var)
  end,
  
  update = function(tv)
-  if btnp(2) then
+  if btnp(3) then
    tv.current += 1
    if tv.current == #tv.var_list + 1 then
     tv.current = 1
    end
   end
   
-  if btnp(3) then
+  if btnp(2) then
    tv.current -= 1
    if tv.current == 0 then
     tv.current = #tv.var_list
@@ -226,7 +205,7 @@ tweak_vars = {
  draw = function(tv)
   -- draw list of viz_name and value
   for k,v in pairs(tv.var_list) do
-   print(v.vin..": <"..g_vars[v.vn]..">",0,(k-1)*8, k == tv.current and 8 or 7)
+   print_outline(v.vin..": <"..g_vars[v.vn]..">",0,(k-1)*8, k == tv.current and 8 or 7,1)
   end
   -- draw current in bold
   -- scroll view depending on current and direction and distance to brders
@@ -234,9 +213,9 @@ tweak_vars = {
  
  dump_to_clipboard = function(tv)
   -- print g_vars object with name and values, to clipboard
-  local str = "g_vars = {"
+  local str = "g_vars = { "
   for v in all(tv.var_list) do
-   str = str.."\""..v.vn.."\" = "..g_vars[v.vn]..","
+   str = str..v.vn.."="..g_vars[v.vn]..", "
   end
   str = str.."}"
   printh(str, "@clip")
@@ -377,9 +356,70 @@ end
 
 function create_fire_emitter(x,y,dirx,diry,length)
  -- create generic emitter
- local e = create_emitter(g_vars.explo_duration,300,x,y)
+ local e = create_emitter(g_vars.explo_duration,100,x,y)
+
  -- complete it with specifics
- -- ...
+ e.n = g_vars.nb_particles_per_emission
+ e.pcolors = {10,9,9,8,13,13,13}
+ e.kd = g_vars.damp
+ e.kl = g_vars.lift_factor
+ e.dirx = dirx
+ e.diry = diry
+ 
+ -- replace e.draw
+ e.draw = function(e)
+  local colors = e.pcolors -- one lookup for all particles
+  local nb_colors = #colors
+  local particles = e.particles
+  for i=1,e.nb_particles do
+   local p = particles[i]
+   -- color ramp by age
+   local color = colors[1+flr(nb_colors*(p.max_age-p.age)*p.inv_max_age)]
+   -- todo: radius evolve with age!
+   if p.radius < 1.5 then
+    pset(p.x,p.y,color)
+   else
+    circfill(p.x,p.y,p.radius,color)
+   end 
+  end
+ end
+
+ e.spawn_particle = function(e,part,cx,cy)
+   
+   local ox = rnd(6)-3 -- -3,3
+   local oy = rnd(6)-3 -- -3,3
+   local ex = abs(ox*oy)*0.1--/(3*3+1) -- excentricity: 0 center, 1 corner
+   --local ex2 = ex*ex
+   --local _ex = .99-ex -- inv excentricity. 
+   local _ex2 = (.99-ex)*(.99-ex)--_ex*_ex
+
+   local speed = g_vars.init_speed+rnd(0.15*g_vars.init_speed)
+   --local life = .2+rnd(.6)
+   local life = 0.7+rnd(0.2)
+
+   -- fill preallocated particle
+   part.is_alive = true
+   part.x = cx+ox
+   part.y = cy+oy
+   part.vx = _ex2*speed*e.dirx
+   part.vy = _ex2*speed*e.diry
+   part.radius = .5+_ex2*rnd(3)
+   part.age = life
+   part.max_age = life
+   part.inv_max_age = 1./life
+    -- todo: add variability in speed
+    -- slow external particles move more
+    -- randomly than central high speed parts.
+    
+   --part.draw = i_fire_particle.draw
+   part.update = function(p)
+    i_fire_particle.update(p,e.kd,e.kl)
+   end
+ end -- spawn_particle
+ 
+ 
+ 
+ 
  return e
 end
 
@@ -476,9 +516,9 @@ function start_explosion(x,y)
   -- new ps
   ps = create_particle_system(x,y)
   -- insert emitters
-  local em = create_quad_fire_emitter(0,0)
-  add(ps.emitters,em)
---[[  
+  --local em = create_quad_fire_emitter(0,0)
+  --add(ps.emitters,em)
+
   local fe_left = create_fire_emitter(0,0,-1,0,2)
   add(ps.emitters,fe_left)
 
@@ -490,7 +530,7 @@ function start_explosion(x,y)
 
   local fe_bottom = create_fire_emitter(0,0,0,1,2)
   add(ps.emitters,fe_bottom)
-  ]]
+  
   ps:init()
   
   add(pss,ps)
@@ -533,20 +573,35 @@ end
 
 
 
+-->8
+---------
+-- MAIN
+---------
 
+-- initial good ones for quad fire emitter, with too omuch particles.
+--g_vars = { explo_duration=0.25, init_speed=300, damp=9, lift_factor=100, nb_particles_per_emission=30, cam_shk_amnt=6, cam_shk_damp=0.7, }
+
+-- init good ones for 4 separate emitters
+--g_vars = { explo_duration=0.25, init_speed=300, damp=9, lift_factor=100, nb_particles_per_emission=5, cam_shk_amnt=6, cam_shk_damp=0.7, }
+
+g_vars = { min_part_size=1,max_part_size=5,part_size_variance=0.1,explo_duration=0.25, init_speed=300, damp=9, lift_factor=100, nb_particles_per_emission=5, cam_shk_amnt=6, cam_shk_damp=0.7, }
 
 function _init()
  profiler = create_profiler()
  profiler:init()
  pss={}
  
- tweak_vars:add_tweak_var("explo_duration","ed",0.1)
- tweak_vars:add_tweak_var("init_speed","is",10)
- tweak_vars:add_tweak_var("damp","d",0.1)
- tweak_vars:add_tweak_var("lift_factor","lf",1)
- tweak_vars:add_tweak_var("nb_particles_per_emission","nbp",1)
- tweak_vars:add_tweak_var("cam_shk_amnt","ska",1)
- tweak_vars:add_tweak_var("cam_shk_damp","skd",0.1)
+ tweak_vars:add("min_part_size","mips",0.1)
+ tweak_vars:add("max_part_size","maps",0.1)
+ tweak_vars:add("part_size_variance","psv",0.1)
+ 
+ tweak_vars:add("explo_duration","ed",0.1)
+ tweak_vars:add("init_speed","is",10)
+ tweak_vars:add("damp","d",0.1)
+ tweak_vars:add("lift_factor","lf",10)
+ tweak_vars:add("nb_particles_per_emission","nbp",1)
+ tweak_vars:add("cam_shk_amnt","ska",1)
+ tweak_vars:add("cam_shk_damp","skd",0.1)
 end
 
 function _update60()
@@ -592,7 +647,8 @@ function draw_fake_map()
 end
 
 function debug_draw()
- print("nb_fxs: "..#pss,0,0,8)
+ --print("nb_fxs: "..#pss,0,0,8)
+ --[[
  local y=8
  for i=1,#pss do
   print("fx["..i.."].nb_emitters: "..#pss[i].emitters,0,y,8) y+=8
@@ -600,6 +656,7 @@ function debug_draw()
    print("  e["..j.."].nb_particles_alive: "..pss[i].emitters[j].nb_particles,0,y,8) y+=8
   end
  end
+ ]]
 end
 __gfx__
 00000000ffffffffffffffffffffffff11dfffff11111111ff111111111111110000000000000000000000000000000000000000000000000000000000000000
