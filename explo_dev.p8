@@ -403,7 +403,8 @@ function create_fire_emitter(x,y,dirx,diry,length)
    part.y = cy+oy
    part.vx = _ex2*speed*e.dirx
    part.vy = _ex2*speed*e.diry
-   part.radius = .5+_ex2*rnd(3)
+   --part.radius = .5+_ex2*rnd(3)
+   part.radius = g_vars.min_part_size + _ex2 * g_vars.max_part_size
    part.age = life
    part.max_age = life
    part.inv_max_age = 1./life
@@ -584,7 +585,8 @@ end
 -- init good ones for 4 separate emitters
 --g_vars = { explo_duration=0.25, init_speed=300, damp=9, lift_factor=100, nb_particles_per_emission=5, cam_shk_amnt=6, cam_shk_damp=0.7, }
 
-g_vars = { min_part_size=1,max_part_size=5,part_size_variance=0.1,explo_duration=0.25, init_speed=300, damp=9, lift_factor=100, nb_particles_per_emission=5, cam_shk_amnt=6, cam_shk_damp=0.7, }
+--g_vars = { min_part_size=.5,max_part_size=3,part_size_variance=0.1,explo_duration=0.25, init_speed=300, damp=9, lift_factor=100, nb_particles_per_emission=5, cam_shk_amnt=6, cam_shk_damp=0.7, }
+g_vars = { min_part_size=0.5, max_part_size=3.5, part_size_variance=0.1, explo_duration=0.25, init_speed=300, damp=9, lift_factor=100, nb_particles_per_emission=2, cam_shk_amnt=6, cam_shk_damp=0.7, }
 
 function _init()
  profiler = create_profiler()
