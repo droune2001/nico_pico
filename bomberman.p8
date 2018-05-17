@@ -67,6 +67,70 @@ g_bomb_spr = 23
 -- init/create
 --
 
+-- sprsh is optional. if provided, packed contains indices into sprsh
+function unpack(packed,sprsh)
+ unpacked={} -- global, no re create each time
+ for i=1,#packed,2 do
+  local num = packed[i]
+  local val = sprsh and sprsh[packed[i+1]] or packed[i+1]
+  for j=1,num do
+   add(unpacked,val)
+  end
+ end
+ return unpacked
+end
+
+function init_anims()
+ anims = {}
+ 
+ -- note: optimize using offsets.
+ -- player
+ local top_spr={   64, 64+1, 64+2, 64+1+32} 
+ local right_spr={ 67, 67+1, 67+2, 67+1+32}
+ local left_spr={  70, 70+1, 70+2, 70+1+32}
+ local bottom_spr={73, 73+1, 73+2, 73+1+32}
+ 
+ local death_spr={64,65,66} -- todo
+ 
+ local idle_fr={ 15,2, 15,4}
+ local run0_fr={ 11,1,  8,2, 11,3, 8,2}
+ local run1_fr={  9,1,  6,2,  9,3, 6,2}
+ local run2_fr={  7,1,  5,2,  7,3, 5,2}
+ local run3_fr={  5,1,  4,2,  5,3, 4,2}
+ local death_fr={10,1,  8,2, 10,3, 8,2}
+ 
+ anims.idle_top={dir=1,frames=unpack(idle_fr,top_spr)}
+ anims.idle_right={dir=1,frames=unpack(idle_fr,right_spr)}
+ anims.idle_left={dir=1,frames=unpack(idle_fr,left_spr)}
+ anims.idle_bottom={dir=1,frames=unpack(idle_fr,bottom_spr)}
+ 
+ anims.run0_top={dir=1,frames=unpack(run0_fr,top_spr)}
+ anims.run0_right={dir=1,frames=unpack(run0_fr,right_spr)}
+ anims.run0_left={dir=1,frames=unpack(run0_fr,left_spr)}
+ anims.run0_bottom={dir=1,frames=unpack(run0_fr,bottom_spr)}
+ 
+ anims.run1_top={dir=1,frames=unpack(run1_fr,top_spr)}
+ anims.run1_right={dir=1,frames=unpack(run1_fr,right_spr)}
+ anims.run1_left={dir=1,frames=unpack(run1_fr,left_spr)}
+ anims.run1_bottom={dir=1,frames=unpack(run1_fr,bottom_spr)}
+ 
+ anims.run2_top={dir=1,frames=unpack(run2_fr,top_spr)}
+ anims.run2_right={dir=1,frames=unpack(run2_fr,right_spr)}
+ anims.run2_left={dir=1,frames=unpack(run2_fr,left_spr)}
+ anims.run2_bottom={dir=1,frames=unpack(run2_fr,bottom_spr)}
+ 
+ anims.run3_top={dir=1,frames=unpack(run3_fr,top_spr)}
+ anims.run3_right={dir=1,frames=unpack(run3_fr,right_spr)}
+ anims.run3_left={dir=1,frames=unpack(run3_fr,left_spr)}
+ anims.run3_bottom={dir=1,frames=unpack(run3_fr,bottom_spr)}
+ 
+ anims.death={dir=2,frames=unpack(death_fr,death_spr)}
+ 
+ -- bomb
+ local bomb_spr={55,56,57,58,59,60}
+ anims.bomb_idle={dir=1,frames=unpack({5,1, 5,2, 7,3, 7,4, 5,5},bomb_spr)} 
+end
+
 function init_tiles()
  tiles = {}
  -- idx: base tile index in pico8 tileset.
@@ -162,16 +226,27 @@ function create_player( index )
  p.dx = 0
  p.dy = 0
  p.tag = 0
- p.face = 3 -- facing direction
- p.anim = "idle"
- p.anim_time = 0
- -- d = current direction (for reflect model)
- -- m = model -> 0 = one shot, 1 = reflect loop, 2 = modulo loop
- p.anims = { 
-  ["idle"] = {f=0,d=1,m=2,st=65,sz=1,spd=1},
-  ["walk"] = {f=0,d=1,m=1,st=64,sz=3,spd=11*16/1000},
-  ["death"] = {f=0,d=1,m=0,st=64,sz=1,spd=1/15}
- }
+ p.face = "top" -- 3 -- facing direction
+ 
+ p.anim = "idle_bottom" -- current anim in global anims array
+ p.f = 0 -- current anim frame, 0-based
+ 
+ -- play anim "a" from frame "f"
+ p.play_anim = function(a,f)
+  p.anim = a or "idle_bottom"
+  p.f = f or 0
+ end
+ 
+ p.update_current_anim = function()
+  local a = anims[p.anim]
+  local nb_frames = #a.frames
+  -- cycle
+  p.f = 
+   (a.dir == 1) 
+   and ( p.f + 1 ) % nb_frames 
+   or min(nb_frames-1,p.f+1)
+ end
+
  return p
 end
 
@@ -229,6 +304,7 @@ function init_game()
  init_powerups()
  init_tiles()
  init_map()
+ init_anims()
  init_players()
 end
 
@@ -526,10 +602,8 @@ function drop_bomb(p)
  end
 end
 
-function get_player_spr( p, dt )
- local pa = p.anims[p.anim]
- local sprf = pa.st + pa.f + ( 3 * p.face )
- return sprf
+function get_player_spr(p)
+ return anims[p.anim].frames[p.f+1] -- to 1-based
 end
 
 function update_player_anim( p, dt )
@@ -539,71 +613,40 @@ function update_player_anim( p, dt )
  elseif abs(p.dx) > abs(p.dy) then
   if p.dx > 0 then
    -- right
-   p.face = 1
+   p.face = "right" -- 1
   else
    -- left
-   p.face = 2
+   p.face = "left" --2
   end
  else  
   if p.dy > 0 then
    -- up
-   p.face = 3
+   p.face = "top" --3
   else
    -- down
-   p.face = 0
+   p.face = "bottom" --0
   end
  end
  
- p.anim_time += dt -- todo: remove
  
  local old_anim = p.anim
+ local new_anim = old_anim
  
  if p.is_alive == 1 then
  local th = 1
   if abs(p.dx) < th and abs(p.dy) < th then
-    p.anim = "idle"
+   p.anim = "idle".."_"..p.face
   else
-    p.anim = "walk"
+   p.anim = "run"..p.pu.s.."_"..p.face
   end
  else 
   p.anim = "death"
  end
  
- if p.anim ~= old_anim then
- -- todo: remove, current anim frame = 0 if new anim, or f++
-  p.anim_time = 0
- end   
-  
- local pa = p.anims[p.anim]
-  -- do not use speed factor, use predefined anim frames.
-  -- scale anim time with speed pickup count
- local t = (p.pu.s+1)*(p.anim_time/pa.spd)
- -- todo: remove
- 
- if pa.m == 0 then -- anim type one-shot
-  -- todo: remove, pa.f++ if not new anim
-  pa.f = flr(t)
-  if pa.f > pa.sz-1 then pa.f = pa.sz-1 end
-  
- elseif pa.m == 1 then -- anim type reflect cycle
- 
-  local lf = (0.5+pa.d*t)%(2*(pa.sz-1))
-  if pa.d == 1 then
-   if lf > (0.5+(pa.sz-1)) then
-    pa.d = -1 
-   end
-  else
-   if lf < 0.5 then
-    pa.d = 1
-   end
-  end
-  pa.f = flr(lf)
-  
- elseif pa.f == 2 then
- 
-  -- todo
-  pa.f = flr( (p.anim_time/pa.spd) % p.anims[p.anim].sz )
-  
+ if new_anim == old_anim then
+  p:update_current_anim()
+ else
+  p:play_anim(new_anim)
  end
 
 end
@@ -911,7 +954,7 @@ function draw_player( p )
   --spr( p.spr_index + p.face, g_mop.x + p.x, g_mop.y + p.y )
   local px = g_mop.x + p.x
   local py = g_mop.y + p.y
-  local pspr = get_player_spr( p, dt )
+  local pspr = get_player_spr( p )
   palt(3,true)
   palt(0,false)
   spr( pspr+16, px, py )
