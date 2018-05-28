@@ -59,7 +59,7 @@ g_winning_player = 0
 
 g_bomb_timeout = 2 -- nb seconds before explosion
 g_explosion_duration = 0.8 -- nb seconds during which fire is harmful
-g_pickup_timeout = 8 -- nb seconds before pickup disappears
+g_pickup_timeout = 999 -- 8 -- nb seconds before pickup disappears
 g_bomb_spr = 23
 
 
@@ -128,7 +128,7 @@ function init_anims()
  
  -- bomb
  local bomb_spr={55,56,57,58,59,60}
- anims.bomb_idle={dir=1,frames=unpack({5,1, 5,2, 7,3, 7,4, 5,5},bomb_spr)} 
+ anims.idle_bomb={dir=1,frames=unpack({5,1, 5,2, 7,3, 7,4, 5,5},bomb_spr)} 
 end
 
 function init_tiles()
@@ -266,10 +266,19 @@ function init_map()
    
    -- default state
    map0[ti] = {t="floor",o=0,f=0,b=0}
-   --[[
    if c%2==0 and l%2==0 then
     map0[ti].t = "hard_wall" -- grid of hard indestructible tiles
    elseif not is_starting_player_area(l,c) then
+   
+   -- fill with pickups
+   --local rnd_object = max(0,flr(rnd(12) - 8.5)) -- 3/4 chance to have 0, then 1,2,3
+   local rnd_object = flr(rnd(3))+1 -- 3/4 chance to have 0, then 1,2,3
+   map0[ti].o = rnd_object
+   pickups[ti] = {t=g_pickup_timeout,o=rnd_object}
+   
+   
+   --[[
+    -- normal fill code
     local is_there_a_tile = ( 2 > rnd(3) )
     if is_there_a_tile then
      local rnd_object = max(0,flr(rnd(12) - 8.5)) -- 3/4 chance to have 0, then 1,2,3
@@ -279,9 +288,11 @@ function init_map()
 	    else
 	     map0[ti].t = "wood_plot"
 	    end
-    end 
+    end
+    ]]
+
+	
    end
-   ]]
   end
  end
  add(maps,map0)
@@ -596,14 +607,44 @@ function drop_bomb(p)
   if maps[1][bomb_ti].b == 0 then
    sfx(0)
    maps[1][bomb_ti].b = 1
-   add(bombs,{x=bomb_tile.x,y=bomb_tile.y,ti=bomb_ti,pi=p.index,t=g_bomb_timeout})
+   add(bombs, create_bomb(bomb_tile.x, bomb_tile.y, bomb_ti, p.index, g_bomb_timeout))
    p.has_bombs_left -= 1
   end
  end
 end
 
-function get_player_spr(p)
- return anims[p.anim].frames[p.f+1] -- to 1-based
+function create_bomb(x,y,ti,pi,t)
+ local b = {}
+ b.x = x
+ b.y = y
+ b.ti = ti
+ b.pi = pi
+ b.t = t
+ 
+ b.anim = "idle_bomb" -- current anim in global anims array
+ b.f = 0 -- current anim frame, 0-based
+ 
+ -- play anim "a" from frame "f"
+ b.play_anim = function(a,f)
+  b.anim = a or "idle_bomb"
+  b.f = f or 0
+ end
+ 
+ b.update_current_anim = function()
+  local a = anims[b.anim]
+  local nb_frames = #a.frames
+  -- cycle
+  b.f = 
+   (a.dir == 1) 
+   and ( b.f + 1 ) % nb_frames 
+   or min(nb_frames-1,b.f+1)
+ end
+ 
+ return b
+end
+
+function get_entity_spr(e)
+ return anims[e.anim].frames[e.f+1] -- to 1-based
 end
 
 function update_player_anim( p, dt )
@@ -762,6 +803,8 @@ function update_bombs( dt )
    add_explosion(b)
    players[b.pi].has_bombs_left += 1
    del(bombs,b)
+  else
+   b.update_current_anim()
   end
  end
 end
@@ -891,8 +934,9 @@ end
 function draw_bombs()
  palt(3,true)
  palt(0,false)
- for b in all(bombs) do 
-  spr(g_bomb_spr, g_mop.x + b.x, g_mop.y + b.y)
+ for b in all(bombs) do
+  local bsprite = get_entity_spr(b)
+  spr(bsprite, g_mop.x + b.x, g_mop.y + b.y)
  end
  palt()
 end
@@ -954,7 +998,7 @@ function draw_player( p )
   --spr( p.spr_index + p.face, g_mop.x + p.x, g_mop.y + p.y )
   local px = g_mop.x + p.x
   local py = g_mop.y + p.y
-  local pspr = get_player_spr( p )
+  local pspr = get_entity_spr( p )
   palt(3,true)
   palt(0,false)
   spr( pspr+16, px, py )
@@ -1068,7 +1112,7 @@ function _init()
  state = 0
 end
 
-function _update()
+function _update60()
  if state == 0 then
   update_menu()
  elseif state == 1 then
