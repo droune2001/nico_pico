@@ -30,8 +30,14 @@ __lua__
  - shoot bombs power
  - a.i.
 ]]
-state=0 -- 0=menu, 1=game, 2=endgame
--- todo: add transitional states
+
+g_delta_time=0.016667
+
+state="menu" -- menu, game, endgame
+menu_state="start_fade_in" -- start_fade_in, end_fade_in, ask_nb_players, player_config, start_fade_out, end_fade_out
+play_state="start_fade_in" -- start_fade_in, end_fade_in, start_countdown, start_game, start_banner, end_banner, start_fade, end_fade
+victory_state="start_fade_in" -- start_fade_in, end_fade_in, start_fade_out, end_fade_out
+
 players={}
 bombs={}
 explosions={}
@@ -43,7 +49,8 @@ debug_rects={} -- map space pixels {x0,y0,x1,y1,color}
 
 g_nb_players = 2 -- 2..4
 g_twp = 8 -- global tile width in pixels
-g_mop = {x=12,y=12} -- global map offsets in pixels
+--g_mop = {x=12,y=12} -- global map offsets in pixels
+g_mop = {x=12,y=17	} -- global map offsets in pixels
 g_tlc = 13 -- global number of tile lines
 g_tcc = 13 -- global number of tile columns
 
@@ -62,6 +69,15 @@ g_explosion_duration = 0.8 -- nb seconds during which fire is harmful
 g_pickup_timeout = 999 -- 8 -- nb seconds before pickup disappears
 g_bomb_spr = 23
 
+-- effects:
+-- 0 = normal 
+-- 1 = fade-to-black-8
+-- 2 = fade-to-black-6
+-- 3 = fade-to-white-4
+-- 4 = fade-in-from-black-8
+-- 5 = fade-in-from-black-6
+-- 6 = fade-in-from-white-4
+g_fx = { id=0, active=0, pal_start=0, pal_end=0, curr_pal=0, t=0, max_t=2, dir=1, debug_t=0 }
 
 --
 -- init/create
@@ -211,7 +227,7 @@ function create_player( index )
  p.is_alive = 1
  p.x = player_starting_position(index).x -- in pixel map space [0..12*8=96]
  p.y = player_starting_position(index).y
- p.spr_index = tiles["player"].idx -- note: tiles must be init
+ p.vic = 0 -- number of victories
  p.pu = {b=0,s=0,f=0} -- bomb, speed, fire
  p.has_bombs_left = 1
  p.bomb_intensity = 1
@@ -225,7 +241,7 @@ function create_player( index )
  p.drag = 10
  p.dx = 0
  p.dy = 0
- p.tag = 0
+ --p.tag = 0
  p.face = "top" -- 3 -- facing direction
  
  p.anim = "idle_bottom" -- current anim in global anims array
@@ -298,6 +314,10 @@ function init_map()
  add(maps,map0)
 end
 
+function init_score()
+ score={0,0,0,0}
+end
+
 function reset_game()
  --players={}
  bombs={}
@@ -317,6 +337,74 @@ function init_game()
  init_map()
  init_anims()
  init_players()
+ init_score()
+end
+
+--
+-- fx
+--
+
+function start_fx(fx,id,duration)
+ fx.id = id
+ fx.active=1
+ fx.t=0
+ fx.max_t=duration
+ if id == 0 then
+  fx.pal_start=0
+  fx.pal_end=0
+  fx.dir=1
+ elseif id == 1 then
+  fx.pal_start=8
+  fx.pal_end=15
+  fx.dir=1
+  --fx.max_t=8
+ elseif id == 2 then
+  fx.pal_start=0
+  fx.pal_end=5
+  fx.dir=1
+ elseif id == 3 then
+  fx.pal_start=20
+  fx.pal_end=23
+  fx.dir=1
+ elseif id == 4 then
+  fx.pal_start=15
+  fx.pal_end=8
+  fx.dir=-1
+ elseif id == 5 then
+  fx.pal_start=5
+  fx.pal_end=0
+  fx.dir=-1
+ elseif id == 6 then
+  fx.pal_start=23
+  fx.pal_end=20
+  fx.dir=-1
+ end
+ fx.curr_pal=fx.pal_start
+end
+
+function update_fx(fx,dt)
+  if fx.active == 1 then
+    fx.t += dt
+    if fx.t >= fx.max_t then
+     fx.active = 0
+     -- todo(nfauvet): add callback on fx end.
+    else
+      local t = fx.t/fx.max_t
+      fx.debug_t = t
+      -- offset by 1 if dir==-1, offset 0 if dir==1
+      local offset = (1-fx.dir)/2
+      -- floating. set_palette applies a flr()
+      fx.curr_pal = fx.pal_start + offset + t * fx.dir * ( 1 + abs(fx.pal_end-fx.pal_start) )
+    end
+  end
+end
+
+function apply_palette_fx(fx)
+ if fx.active == 0 or fx.id == 0 then 
+  set_palette(0) 
+ else
+  set_palette(fx.curr_pal)
+ end
 end
 
 --
@@ -876,17 +964,62 @@ function check_endgame()
 end
 
 function update_game()
- local dt = 1/30
  debug_rects={} -- leak but garbage collector?
- update_bombs( dt )
- update_explosions( dt )
- update_pickups( dt )
- update_players( dt )
+ update_bombs( g_delta_time )
+ update_explosions( g_delta_time )
+ update_pickups( g_delta_time )
+ update_players( g_delta_time )
  check_endgame()
 end
 
 function update_menu()
- local dt = 1/30
+ if menu_state == "start_fade_in" then
+  start_fx(g_fx,4,1.0)
+  menu_state="fading_in"
+ elseif menu_state == "fading_in" then
+  update_fx(g_fx,g_delta_time)
+  if g_fx.active == 0 then 
+   menu_state = "end_fade_in" 
+  end
+ elseif menu_state == "end_fade_in" then
+  g_nb_players=2
+  menu_state="ask_nb_players"
+ elseif menu_state == "ask_nb_players" then
+  for i=0,3 do -- for each player controller
+   -- left = cycle nb_players downwards
+   if ( btnp( 0, i ) ) g_nb_players = 2 + g_nb_players % 3
+   -- right = cycle nb_players upwards
+   if ( btnp( 1, i ) ) g_nb_players = 2 + (g_nb_players -1)%3
+   -- start game
+   if ( btnp( 4, i ) ) then 
+    menu_state="player_config"
+   end
+  end
+ elseif menu_state == "player_config" then
+  for i=0,3 do -- for each player controller
+   -- left = cycle nb_players downwards
+   --if ( btnp( 0, i ) ) g_nb_players = 2 + g_nb_players % 3
+   -- right = cycle nb_players upwards
+   --if ( btnp( 1, i ) ) g_nb_players = 2 + (g_nb_players -1)%3
+   -- start game
+   if ( btnp( 4, i ) ) then 
+    menu_state="start_fade_out"
+   end
+  end
+ elseif menu_state == "start_fade_out" then
+  start_fx(g_fx,1, 0.6)
+  menu_state="fading_out"
+ elseif menu_state == "fading_out" then
+  update_fx(g_fx,g_delta_time)
+  if g_fx.active == 0 then 
+   menu_state = "end_fade_out" 
+  end
+ elseif menu_state == "end_fade_out" then
+  init_game() -- todo: put in first state of update_game
+  state = "game"
+ end 
+ 
+--[[ 
  for i=0,3 do
   -- left = cycle nb_players downwards
   if ( btnp( 0, i ) ) g_nb_players = 2 + g_nb_players % 3
@@ -898,14 +1031,14 @@ function update_menu()
    state = 1 
   end
  end
+ ]]
 end
 
 function update_endgame()
- local dt = 1/30
  for i=0,g_nb_players-1 do
   if ( btnp( 4, i ) ) then
    init_game()
-   state = 0
+   state = "menu"
   end
  end
 end
@@ -915,7 +1048,8 @@ end
 --
 
 function draw_map()
- map(0,0,0,0,16,16)
+ --map(0,0,0,0,16,16)
+ cls(1)
  local cm=1 -- current map index
  for l=1,g_tlc do
    for c=1,g_tcc do
@@ -995,7 +1129,6 @@ end
 
 function draw_player( p )
  if p.is_alive == 1 then 
-  --spr( p.spr_index + p.face, g_mop.x + p.x, g_mop.y + p.y )
   local px = g_mop.x + p.x
   local py = g_mop.y + p.y
   local pspr = get_entity_spr( p )
@@ -1017,6 +1150,9 @@ function draw_debug_gui()
  for r in all(debug_rects) do
   rect(r.x0,r.y0,r.x1,r.y1,r.c)
  end
+ 
+ print("menu_state = "..menu_state, 1, 100, 2)
+ 
 --[[
  print(#pickups,10,10,8)
  local pu_i = 1
@@ -1031,7 +1167,7 @@ function draw_debug_gui()
   print("x: "..bombs[i].x.." y:"..bombs[i].y.." pi:"..bombs[i].pi, 10, 10+8*i, 8)
  end
 ]]
-
+--[[
 local p = players[1]
 local pa = p.anims[p.anim]
 rectfill(0,64,127,127,1)
@@ -1040,7 +1176,7 @@ print("t: "..p.anim_time, 1, 71, 9)
 print("st:"..pa.st.." sz:"..pa.sz.." spd: "..pa.spd.." f:"..pa.f, 1, 77, 9)
 print("dx: "..p.dx.." dy: "..p.dy, 1, 83, 9)
 print("adx: "..abs(p.dx).." ady: "..abs(p.dy), 1, 90, 9)
-
+]]
 --[[
  print(#players,64,10,8)
  for i=1,#players do
@@ -1074,7 +1210,11 @@ end
 
 
 function draw_gui()
- 
+ rectfill(0,0,128,8,9) -- yellow band
+ shprint("p1", 2, 2, 6, 0) 
+ shprint("p2", 34, 2, 6, 0)
+ if g_nb_players > 2 then shprint("p3", 66, 2, 6, 0) end
+ if g_nb_players > 3 then shprint("p4", 98, 2, 6, 0) end
 end
 
 function draw_game()
@@ -1084,13 +1224,21 @@ function draw_game()
  draw_explosions()
  draw_players()
  draw_gui()
--- draw_debug_gui()
 end
 
 function draw_menu()
- --cls(2)
+ 
+ apply_palette_fx(g_fx)
  sspr(96,32,4*8,4*8,0,0,128,128)
- print("nb_players: "..g_nb_players, 10, 80, 7)
+ 
+ if menu_state == "ask_nb_players" then
+  print("nb_players: "..g_nb_players, 10, 80, 7)
+ elseif menu_state == "player_config" then
+  print("config...", 10, 80, 7)
+ end 
+ 
+ -- reset palette 
+ pal()
 end
 
 function draw_endgame()
@@ -1104,32 +1252,157 @@ function draw_endgame()
 end
 
 --
+-- utils
+--
+
+function set(obj,props)
+ obj=obj or {}
+ for k,v in pairs(props) do
+  obj[k]=v
+ end
+ return obj
+end
+
+function each_char(str,fn)
+ for i=1,#str do
+  fn(sub(str,i,i),i)
+ end
+end
+
+function call(fn,a)
+ return fn
+  and fn(a[1],a[2],a[3],a[4],a[5])
+  or a
+end
+
+function ob(str,props)
+ local result,s,n,inpar=
+  {},1,1,0
+ each_char(str,function(c,i)
+  local sc,nxt=sub(str,s,s),i+1
+  if c=="(" then
+   inpar+=1
+  elseif c==")" then
+   inpar-=1
+  elseif inpar==0 then
+   if c=="=" then
+    n,s=sub(str,s,i-1),nxt
+   elseif c=="," and s<i then
+	   result[n]=sc=='"'
+	    and sub(str,s+1,i-2)
+	    or sub(str,s+1,s+1)=="("
+	    and call(obfn[sc],ob(
+	     sub(str,s+2,i-2)..","
+	    ))
+	    or sc!="f"
+	    and band(sub(str,s,i-1)+0,0xffff.fffe)
+	   s=nxt
+	   if (type(n)=="number") n+=1
+   elseif sc!='"' and c==" " or c=="\n" then
+    s=nxt
+   end
+  end
+ end)
+ return set(props,result)
+end
+
+function lut(str)
+ local result,s={},1
+ each_char(str,function(c,i)
+  if c=="\n" then
+   add(result,ob(sub(str,s,i)))
+   s=i
+  end
+ end)
+ return result
+end
+
+------------------------------
+-- pretty text
+-- draws shadows around the text
+-- a: 1   = align right
+-- a: 0.5 = align middle
+-- a: 0   = align left
+------------------------------
+
+shpr=lut([[
+ x=0,y=-1,c=0,
+ x=0,y=1,c=0,
+ x=1,y=0,c=0,
+ x=-1,y=0,c=0,
+ x=-1,y=-1,c=0,
+ x=-1,y=1,c=0,
+ x=1,y=1,c=0,
+ x=1,y=-1,c=0,
+ x=0,y=0,c=1,
+]])
+function shprint(s,x,y,c,a)
+ x-=a*4*#(s.."")
+ for d in all(shpr) do
+  print(s,x+d.x,y+d.y,c*d.c)
+ end
+end
+
+
+-------------------------------
+-- palette effects
+-------------------------------
+
+-- we will store (n) palettes in personal address space, 
+-- extracted from the spritesheed.
+function init_palettes(n)
+ local a=0x5000 
+ for p=0,n do
+  local pri=p
+  local sec=8
+  if p>=24 then
+   pri=13+p/8
+   sec+=p%8
+  end
+  for c=0,15 do
+   local v=sget(sec,sget(pri,c))
+   if (c==3) v+=0x80
+   poke(a,v)
+   a+=1
+  end
+ end
+end
+
+function set_palette(no)
+ memcpy(0x5f00,0x5000+shl(flr(no),4),16)
+end
+
+
+--
 -- main functions
 --
 
 function _init()
  --cartdata("droune2001-bomberfun-0.01")
- state = 0
+ init_palettes(39)
+ state = "menu"
 end
 
 function _update60()
- if state == 0 then
+ if state == "menu" then
   update_menu()
- elseif state == 1 then
+ elseif state == "game" then
   update_game()
- else
+ else -- "victory"
   update_endgame()
  end
 end
 
 function _draw()
- if state == 0 then
+ if state == "menu" then
   draw_menu()
- elseif state == 1 then
+ elseif state == "game" then
   draw_game()
  else
   draw_endgame()
  end
+ 
+ draw_debug_gui()
 end
 
 __gfx__
