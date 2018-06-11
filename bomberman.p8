@@ -35,8 +35,8 @@ g_delta_time=0.016667
 
 state="menu" -- menu, game, endgame
 menu_state="start_fade_in" -- start_fade_in, end_fade_in, ask_nb_players, player_config, start_fade_out, end_fade_out
-play_state="start_fade_in" -- start_fade_in, end_fade_in, start_countdown, start_game, start_banner, end_banner, start_fade, end_fade
-victory_state="start_fade_in" -- start_fade_in, end_fade_in, start_fade_out, end_fade_out
+game_state="start_fade_in" -- start_fade_in, end_fade_in, start_countdown, start_game, start_banner, end_banner, start_fade, end_fade
+endgame_state="start_fade_in" -- start_fade_in, end_fade_in, start_fade_out, end_fade_out
 
 players={}
 bombs={}
@@ -46,6 +46,10 @@ tiles={} -- tile map by name, stores id, bbox and flags.
 maps={}
 powerups={}
 debug_rects={} -- map space pixels {x0,y0,x1,y1,color}
+
+game_is_init = false
+g_countdown_time = 3.0
+g_cd_time_left = 0.0
 
 g_nb_players = 2 -- 2..4
 g_twp = 8 -- global tile width in pixels
@@ -338,6 +342,7 @@ function init_game()
  init_anims()
  init_players()
  init_score()
+ game_is_init = true
 end
 
 --
@@ -946,7 +951,7 @@ function update_explosions( dt )
  end
 end
 
-function check_endgame()
+function check_victory()
  local nb_players_alive = 0
  g_winning_player = 0
  for i=1,g_nb_players do
@@ -959,17 +964,62 @@ function check_endgame()
  if nb_players_alive == 1 or 
     nb_players_alive == 0 
  then 
-  state = 2 
+  --state = 2
+  return g_winning_player 
+ else
+  return 0  
  end
 end
 
+function start_countdown(t)
+ g_cd_time_left = t
+end
+
+function update_countdown(dt)
+ g_cd_time_left -= dt
+end
+
+function countdown_finished()
+ return g_cd_time_left <= 0
+end
+
 function update_game()
- debug_rects={} -- leak but garbage collector?
- update_bombs( g_delta_time )
- update_explosions( g_delta_time )
- update_pickups( g_delta_time )
- update_players( g_delta_time )
- check_endgame()
+ if game_state == "start_fade_in" then
+  if not game_is_init then init_game() end
+  start_fx(g_fx,4,1.0)
+  game_state="fading_in"
+ elseif game_state == "fading_in" then
+  update_fx(g_fx,g_delta_time)
+  if g_fx.active == 0 then 
+   game_state = "end_fade_in" 
+  end
+ elseif game_state == "end_fade_in" then
+  game_state = "start_countdown"
+ elseif game_state == "start_countdown" then
+  start_countdown(g_countdown_time)
+  game_state = "counting_down"
+ elseif game_state == "counting_down" then
+  update_countdown(g_delta_time)
+  if countdown_finished() then
+   game_state = "end_countdown"
+  end
+ elseif game_state == "end_countdown" then -- todo: merge end_game and play_game states
+  game_state = "play_game"
+ elseif game_state == "play_game" then
+  debug_rects={} -- leak but garbage collector?
+  update_bombs( g_delta_time )
+  update_explosions( g_delta_time )
+  update_pickups( g_delta_time )
+  update_players( g_delta_time )
+  local winning_player = check_victory() 
+  if winning_player > 0 then
+   game_state = "victory_match"
+  end
+ elseif game_state == "victory_match" then
+  state = "endgame"
+  endgame_state = "start_fade_in"
+ end
+ 
 end
 
 function update_menu()
@@ -1015,8 +1065,8 @@ function update_menu()
    menu_state = "end_fade_out" 
   end
  elseif menu_state == "end_fade_out" then
-  init_game() -- todo: put in first state of update_game
   state = "game"
+  game_state = "start_fade_in"
  end 
  
 --[[ 
@@ -1037,8 +1087,9 @@ end
 function update_endgame()
  for i=0,g_nb_players-1 do
   if ( btnp( 4, i ) ) then
-   init_game()
+   --init_game()
    state = "menu"
+   menu_state = "start_fade_in"
   end
  end
 end
@@ -1151,7 +1202,10 @@ function draw_debug_gui()
   rect(r.x0,r.y0,r.x1,r.y1,r.c)
  end
  
- print("menu_state = "..menu_state, 1, 100, 2)
+ shprint("state = "..state, 1, 92, 2, 0)
+ shprint("m_state = "..menu_state, 1, 100, 2, 0)
+ shprint("g_state = "..game_state, 1, 108, 2, 0)
+ shprint("e_state = "..endgame_state, 1, 116, 2, 0)
  
 --[[
  print(#pickups,10,10,8)
@@ -1209,21 +1263,45 @@ end
  
 
 
-function draw_gui()
- rectfill(0,0,128,8,9) -- yellow band
+function draw_game_gui()
+ -- yellow band with score
+ rectfill(0,0,128,8,9)
  shprint("p1", 2, 2, 6, 0) 
  shprint("p2", 34, 2, 6, 0)
  if g_nb_players > 2 then shprint("p3", 66, 2, 6, 0) end
  if g_nb_players > 3 then shprint("p4", 98, 2, 6, 0) end
+ 
+ if game_state == "counting_down" then
+  local bx = 0
+  local norm_dy = 1-cos(0.5 * min(g_countdown_time-g_cd_time_left, 0.5)) 
+  local dy = 9 * norm_dy * norm_dy
+  local by = 66 - dy
+  local ex = 128
+  local ey = 66 + dy
+  rectfill(bx,by,ex,ey,2)
+  line(bx,by,ex,by,7)
+  line(bx,ey,ex,ey,7)
+  local int_cd = ceil(g_cd_time_left)
+  shprint(""..int_cd, 64,64,7,0.5)
+ end
+ 
+ --if game_state == ""
 end
 
 function draw_game()
- --cls()
- draw_map()
- draw_bombs()
- draw_explosions()
- draw_players()
- draw_gui()
+ if game_is_init then
+  apply_palette_fx(g_fx)
+  
+  draw_map()
+  draw_bombs()
+  draw_explosions()
+  draw_players()
+  draw_game_gui()
+  
+  pal()
+ else
+  cls()
+ end
 end
 
 function draw_menu()
@@ -1388,7 +1466,7 @@ function _update60()
   update_menu()
  elseif state == "game" then
   update_game()
- else -- "victory"
+ elseif state == "end_game" then
   update_endgame()
  end
 end
@@ -1398,7 +1476,7 @@ function _draw()
   draw_menu()
  elseif state == "game" then
   draw_game()
- else
+ elseif state == "endgame" then
   draw_endgame()
  end
  
