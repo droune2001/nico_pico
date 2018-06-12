@@ -986,7 +986,7 @@ end
 function update_game()
  if game_state == "start_fade_in" then
   if not game_is_init then init_game() end
-  start_fx(g_fx,4,1.0)
+  start_fx(g_fx,4,0.5)
   game_state="fading_in"
  elseif game_state == "fading_in" then
   update_fx(g_fx,g_delta_time)
@@ -1261,7 +1261,21 @@ print("adx: "..abs(p.dx).." ady: "..abs(p.dy), 1, 90, 9)
 ]]
 end
  
+-- t: time
+-- d: duration
+function ease_in_quad(t,d)
+ t /= d
+ if (t<0) return 0
+ if (t>1) return 1
+ return t*t
+end
 
+function ease_out_quad(t,d)
+ t /= d
+ if (t<0) return 1
+ if (t>1) return 0
+ return (t-1)*(t-1)
+end
 
 function draw_game_gui()
  -- yellow band with score
@@ -1272,15 +1286,19 @@ function draw_game_gui()
  if g_nb_players > 3 then shprint("p4", 98, 2, 6, 0) end
  
  if game_state == "counting_down" then
-  local bx = 0
-  local norm_dy = 1-cos(0.5 * min(g_countdown_time-g_cd_time_left, 0.5)) 
-  local dy = 9 * norm_dy * norm_dy
+  local ease_duration = 0.1*g_countdown_time
+  local eit = g_countdown_time - g_cd_time_left -- 0__3sec
+  local eot = ease_duration - g_cd_time_left -- -2.6__0__0.4
+  local ei = ease_in_quad(eit,ease_duration)  -- 0___1_1_1_1_1
+  local eo = ease_out_quad(eot,ease_duration) -- 1_1_1_1_1___0
+  local eio = ei * eo                         -- 0___1_1_1___0 
+   
+  local dy = 9 * eio
   local by = 66 - dy
-  local ex = 128
   local ey = 66 + dy
-  rectfill(bx,by,ex,ey,2)
-  line(bx,by,ex,by,7)
-  line(bx,ey,ex,ey,7)
+  rectfill(0,by,128,ey,2)
+  line(0,by,128,by,7)
+  line(0,ey,128,ey,7)
   local int_cd = ceil(g_cd_time_left)
   shprint(""..int_cd, 64,64,7,0.5)
  end
