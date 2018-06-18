@@ -53,11 +53,12 @@ g_cd_time_left = 0.0
 
 g_nb_players = 2 -- 2..4
 g_nb_cups_per_game = 2
+g_max_nb_cups = 3
 
 g_match_winning_player = 0
 g_game_winning_player = 0
 
-
+g_conf_index = 0
 
 
 g_twp = 8 -- global tile width in pixels
@@ -187,6 +188,8 @@ function init_tiles()
  tiles["fire_right_end"] = {idx=239,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["fire_top_end"] = {idx=255,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["fire_bottom_end"] = {idx=253,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
+ 
+ tiles["cup"] = {idx=48,tag=0,d=0,bbox={x=0,y=0,w=7,h=7}}
 end
 
 function init_powerups()
@@ -303,6 +306,35 @@ function reset_players()
  end
 end
 
+function config_players()
+ for i=0,g_nb_players-1 do -- for each player controller
+  if (btnp(⬅️,i)) then 
+   if g_conf_index == 0 then
+    g_nb_cups_per_game = max(g_nb_cups_per_game-1,1)
+   else
+    players[g_conf_index].is_human = not players[g_conf_index].is_human
+   end
+  end
+  if (btnp(➡️,i)) then
+  if g_conf_index == 0 then
+    g_nb_cups_per_game = min(g_nb_cups_per_game+1,g_max_nb_cups)
+   else
+    players[g_conf_index].is_human = not players[g_conf_index].is_human
+   end
+  end
+  if (btnp(⬆️,i)) then
+   g_conf_index = (g_conf_index-1)%(g_nb_players+1)
+  end
+  if (btnp(⬇️,i)) then
+   g_conf_index = (g_conf_index+1)%(g_nb_players+1)
+  end
+  if (btnp(🅾️,i)) then -- 4 
+   return true
+  end
+ end
+ return false
+end
+
 function init_map()
  maps = {}
  local map0 = {}
@@ -371,7 +403,7 @@ function init_first_game()
  init_tiles()
  init_map()
  init_anims()
- init_players()
+ --init_players() -- done in menu
  init_score()
  game_is_init = true
 end
@@ -1131,18 +1163,12 @@ function update_menu()
    -- start game
    if ( btnp( 4, i ) ) then 
     menu_state="player_config"
+	init_players()
    end
   end
  elseif menu_state == "player_config" then
-  for i=0,3 do -- for each player controller
-   -- left = cycle nb_players downwards
-   --if ( btnp( 0, i ) ) g_nb_players = 2 + g_nb_players % 3
-   -- right = cycle nb_players upwards
-   --if ( btnp( 1, i ) ) g_nb_players = 2 + (g_nb_players -1)%3
-   -- start game
-   if ( btnp( 4, i ) ) then 
-    menu_state="start_fade_out"
-   end
+  if config_players() then
+   menu_state="start_fade_out"
   end
  elseif menu_state == "start_fade_out" then
   start_fx(g_fx,1, 0.6)
@@ -1155,29 +1181,38 @@ function update_menu()
  elseif menu_state == "end_fade_out" then
   state = "game"
   game_state = "start_fade_in"
+  game_is_init = false
  end 
- 
---[[ 
- for i=0,3 do
-  -- left = cycle nb_players downwards
-  if ( btnp( 0, i ) ) g_nb_players = 2 + g_nb_players % 3
-  -- right = cycle nb_players upwards
-  if ( btnp( 1, i ) ) g_nb_players = 2 + (g_nb_players -1)%3
-  -- start game
-  if ( btnp( 4, i ) ) then 
-   init_game()
-   state = 1 
-  end
- end
- ]]
 end
 
 function update_endgame()
- for i=0,g_nb_players-1 do
-  if ( btnp( 4, i ) ) then
-   state = "menu"
-   menu_state = "start_fade_in"
+ if endgame_state == "start_fade_in" then
+  start_fx(g_fx,1, 0.6)
+  endgame_state = "fading_in"
+ elseif endgame_state == "fading_in" then
+  update_fx(g_fx,g_delta_time)
+  if g_fx.active == 0 then 
+   endgame_state = "end_fade_in"
   end
+ elseif endgame_state == "end_fade_in" then -- todo: remove
+  endgame_state = "wait_for_return"
+ elseif endgame_state == "wait_for_return" then
+  for i=0,g_nb_players-1 do
+   if ( btnp( 4, i ) ) then
+    endgame_state = "start_fade_out"
+   end
+ end
+ elseif endgame_state == "start_fade_out" then
+  start_fx(g_fx,1, 0.6)
+  endgame_state = "fading_out"
+ elseif endgame_state == "fading_out" then
+  update_fx(g_fx,g_delta_time)
+  if g_fx.active == 0 then 
+   endgame_state = "end_fade_out"
+  end
+ elseif endgame_state == "end_fade_out" then
+  state = "menu"
+  menu_state = "start_fade_in"
  end
 end
 
@@ -1367,10 +1402,15 @@ end
 function draw_game_gui()
  -- yellow band with score
  rectfill(0,0,128,8,9)
- shprint("p1", 2, 2, 6, 0) shprint(""..players[1].vic, 12, 2, 6, 0) 
- shprint("p2", 34, 2, 6, 0) shprint(""..players[2].vic, 44, 2, 6, 0) 
- if g_nb_players > 2 then shprint("p3", 66, 2, 6, 0) shprint(""..players[3].vic, 76, 2, 6, 0) end
- if g_nb_players > 3 then shprint("p4", 98, 2, 6, 0) shprint(""..players[4].vic, 108, 2, 6, 0) end
+ for i=1,g_nb_players do
+  shprint("p"..i, 2+32*(i-1), 2, 6, 0)
+  for j=1,players[i].vic do
+   palt(3,true)
+   palt(0,false)
+   spr(tiles["cup"].idx,11+32*(i-1)+7*(j-1),1)
+   palt()
+  end
+ end
 end
 
 function draw_banners()
@@ -1437,7 +1477,15 @@ function draw_menu()
  if menu_state == "ask_nb_players" then
   print("nb_players: "..g_nb_players, 10, 80, 7)
  elseif menu_state == "player_config" then
-  print("config...", 10, 80, 7)
+  local base_y = 80
+  print("victories: "..g_nb_cups_per_game, 10, base_y, 7)
+  for i=0,g_nb_players-1 do
+   local player_index = i+1
+   local player_is_human_str = players[player_index].is_human and "hum" or "com"
+   print("player  "..player_index..": "..player_is_human_str, 10, base_y+8+8*i, 7)
+  end
+  local cursor_pos = base_y + 8*g_conf_index
+  print(">", 2, cursor_pos, 7)
  end 
  
  -- reset palette 
@@ -1445,9 +1493,40 @@ function draw_menu()
 end
 
 function draw_endgame()
- cls(1)
- print("the end", 10, 10, 8)
- print("player "..g_game_winning_player.." wins!", 20, 20, 8)
+ 
+ apply_palette_fx(g_fx)
+ 
+ cls(8)
+ local t=t()
+ local dist=30+5*cos(2.0*t)
+ local x=64+dist*cos(0.3*t)
+ local y=64-dist*sin(0.3*t)
+ local col=7+14*sin(0.1*t)
+ local radius=10+2*sin(0.5*t)
+ 
+ palt(0,false)
+ --for i=1,10 do end
+ circfill(x,y,radius,col)
+ circfill(x,y,radius,col)
+ circfill(x,y,radius,col)
+ circfill(x,y,radius,col)
+ palt()
+ 
+ if endgame_state == "start_fade_in" then
+ elseif endgame_state == "fading_in" then
+ elseif endgame_state == "end_fade_in" then -- todo: remove
+ elseif endgame_state == "wait_for_return" then
+ 
+ --cls(1)
+ print("the end", 10, 10, 9)
+ print("player "..g_game_winning_player.." wins!", 20, 20, 9)
+ 
+ elseif endgame_state == "start_fade_out" then
+ elseif endgame_state == "fading_out" then
+ elseif endgame_state == "end_fade_out" then
+ end
+ 
+ pal()
 end
 
 --
@@ -1580,6 +1659,7 @@ function _init()
  --cartdata("droune2001-bomberfun-0.01")
  init_palettes(39)
  state = "menu"
+ --state = "end_game"
 end
 
 function _update60()
@@ -1629,14 +1709,14 @@ f94210f7fff9421079f9f77700000000000000000000000000000000333003333000100333000033
 000000000000000000000000000000000000000000000000000000003766ddd1d66676666644421677dddd1168888226d6666666999999990000000000000000
 00000000000000000000000000000000000000000000000000000000f6dddd5166f6666f6d44211175111111665ddd666666666f999999990000000000000000
 0000000000000000000000000000000000000000000000000000000063111111666d6f66676d11115111111166777d66666d6666999999990000000000000000
-00000000000000000000000000000000000000000000000000000000333333333333333333000ff333000f433333f43333333333000000000000000000000000
-0000000000000000000000000000000000000000000000000000000033333333333333333000f4033000f4033300f43333333f43000000000000000000000000
-0000000000000000000000000000000000000000000000000000000033333333333333330700010037001103307001033300f433000000000000000000000000
-0000000000000000000000000000000000000000000000000000000033333f433000ff0300000000300000033000000330700103000000000000000000000000
-0000000000000000000000000000000000000000000000000000000033300433007004f000000010300000133000010330000003000000000000000000000000
-00000000000000000000000000000000000000000000000000000000330700330000001000000110300001133300103330000103000000000000000000000000
-000000000000000000000000000000000000000000000000000000003300103300000100300011033d0011d33dd55dd333001033000000000000000000000000
-0000000000000000000000000000000000000000000000000000000033d00d33d000100d3d0000d333dddd3333dddd333dd55dd3000000000000000000000000
+30333033000000000000000000000000000000000000000000000000333333333333333333000ff333000f433333f43333333333000000000000000000000000
+0400070300000000000000000000000000000000000000000000000033333333333333333000f4033000f4033300f43333333f43000000000000000000000000
+0499a70300000000000000000000000000000000000000000000000033333333333333330700010037001103307001033300f433000000000000000000000000
+3049903300000000000000000000000000000000000000000000000033333f433000ff0300000000300000033000000330700103000000000000000000000000
+330a033300000000000000000000000000000000000000000000000033300433007004f000000010300000133000010330000003000000000000000000000000
+30997033000000000000000000000000000000000000000000000000330700330000001000000110300001133300103330000103000000000000000000000000
+330003330000000000000000000000000000000000000000000000003300103300000100300011033d0011d33dd55dd333001033000000000000000000000000
+3333333300000000000000000000000000000000000000000000000033d00d33d000100d3d0000d333dddd3333dddd333dd55dd3000000000000000000000000
 33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333398989999999999999999999999999999
 33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333389898989898999899999999999999999
 33333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333333398989899989999999999999999999999
