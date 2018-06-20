@@ -32,7 +32,7 @@ __lua__
 ]]
 
 g_normal_dt=0.016667
-g_slow_dt=g_normal_dt / 2
+g_slow_dt=g_normal_dt / 3 -- victory slowdown
 g_delta_time=g_normal_dt
 
 state="menu" -- menu, game, endgame
@@ -239,7 +239,8 @@ end
 function create_player( index )
  local p = {}
  p.index = index -- 1-based, 1,2,3,4
- p.is_alive = 1
+ p.is_alive = true
+ p.is_killable = true
  p.is_human = true
  p.x = player_starting_position(index).x -- in pixel map space [0..12*8=96]
  p.y = player_starting_position(index).y
@@ -292,7 +293,8 @@ end
 function reset_players()
  for i=1,g_nb_players do
   local p=players[i]
-  p.is_alive = 1
+  p.is_alive = true
+  p.is_killable = true
   p.x = player_starting_position(i).x -- in pixel map space [0..12*8=96]
   p.y = player_starting_position(i).y
   p.pu = {b=0,s=0,f=0} -- bomb, speed, fire
@@ -394,7 +396,6 @@ function reset_renderables()
  bombs={} -- active bombs on field
  explosions={} -- active explosions on field
  pickups={} -- active powerups on field
- --powerups={}
  debug_rects={}
 end
 
@@ -580,7 +581,7 @@ end
 
 function kill_player(p)
  -- todo: anim
- p.is_alive = 0
+ if(p.is_killable) p.is_alive = false
 end
 
 function test_die_by_fire( p, ti )
@@ -839,7 +840,7 @@ function update_player_anim( p, dt )
  local old_anim = p.anim
  local new_anim = old_anim
  
- if p.is_alive == 1 then
+ if p.is_alive then
  local th = 1
   if abs(p.dx) < th and abs(p.dy) < th then
    p.anim = "idle".."_"..p.face
@@ -895,7 +896,7 @@ end
 
 function update_players( dt )
  for p in all( players ) do
-  if ( p.is_alive == 1 ) update_player( p, dt )
+  if ( p.is_alive ) update_player( p, dt )
  end
 end
 
@@ -1028,7 +1029,7 @@ function check_match_victory()
  local nb_players_alive = 0
  local winning_player = 0
  for i=1,g_nb_players do
-  if players[i].is_alive == 1 then 
+  if players[i].is_alive then 
    nb_players_alive += 1
    winning_player = i
   end
@@ -1074,7 +1075,7 @@ function update_game()
  
  elseif game_state == "fading_in" then
  
- update_fx(g_fx,g_delta_time)
+ update_fx(g_fx,g_normal_dt)
   
   if g_fx.active == 0 then 
    game_state = "end_fade_in" 
@@ -1091,7 +1092,7 @@ function update_game()
 
  elseif game_state == "counting_down" then
   
-  update_countdown(g_delta_time)
+  update_countdown(g_normal_dt)
   if countdown_finished() then
    game_state = "end_countdown"
   end
@@ -1117,12 +1118,16 @@ function update_game()
  
   start_fx(g_fx,3,3.0)
   start_countdown(g_countdown_time) -- tmp, just to draw a banner
+  -- invincible players during slowdown
+  for p in all( players ) do
+   if(p.is_alive) p.is_killable = false
+  end
   game_state = "victory_match_announcing"
   
  elseif game_state == "victory_match_announcing" then
  
-  update_fx(g_fx,g_delta_time)
-  update_countdown(g_delta_time)
+  update_fx(g_fx,g_normal_dt)
+  update_countdown(g_normal_dt)
   
   --
   debug_rects={} -- leak but garbage collector?
@@ -1231,7 +1236,7 @@ end
 -- draw
 --
 
-function draw_map()
+function draw_map(dt)
  --map(0,0,0,0,16,16)
  cls(1)
  local cm=1 -- current map index
@@ -1249,7 +1254,7 @@ function draw_map()
  end
 end
 
-function draw_bombs()
+function draw_bombs(dt)
  palt(3,true)
  palt(0,false)
  for b in all(bombs) do
@@ -1259,7 +1264,7 @@ function draw_bombs()
  palt()
 end
 
-function draw_explosions()
+function draw_explosions(dt)
  local draw_items = {} -- i,x,y
  for e in all(explosions) do
   local middle_idx = {c=1+flr(e.x/g_twp),l=1+flr(e.y/g_twp)}
@@ -1311,8 +1316,8 @@ function draw_explosions()
  end
 end
 
-function draw_player( p )
- if p.is_alive == 1 then 
+function draw_player( p, dt )
+ if p.is_alive then 
   local px = g_mop.x + p.x
   local py = g_mop.y + p.y
   local pspr = get_entity_spr( p )
@@ -1324,9 +1329,9 @@ function draw_player( p )
  end
 end
 
-function draw_players()
+function draw_players(dt)
  for p in all(players) do
-  draw_player(p)
+  draw_player(p,dt)
  end
 end
  
@@ -1334,11 +1339,13 @@ function draw_debug_gui()
  for r in all(debug_rects) do
   rect(r.x0,r.y0,r.x1,r.y1,r.c)
  end
- 
+
+--[[ 
  shprint("state = "..state, 1, 92, 2, 0)
  shprint("m_state = "..menu_state, 1, 100, 2, 0)
  shprint("g_state = "..game_state, 1, 108, 2, 0)
  shprint("e_state = "..endgame_state, 1, 116, 2, 0)
+ ]]
  
 --[[
  print(#pickups,10,10,8)
@@ -1348,12 +1355,14 @@ function draw_debug_gui()
   pu_i += 1
  end
 ]]
+
 --[[
  print(#bombs,10,10,8)
  for i=1,#bombs do
   print("x: "..bombs[i].x.." y:"..bombs[i].y.." pi:"..bombs[i].pi, 10, 10+8*i, 8)
  end
 ]]
+
 --[[
 local p = players[1]
 local pa = p.anims[p.anim]
@@ -1364,6 +1373,7 @@ print("st:"..pa.st.." sz:"..pa.sz.." spd: "..pa.spd.." f:"..pa.f, 1, 77, 9)
 print("dx: "..p.dx.." dy: "..p.dy, 1, 83, 9)
 print("adx: "..abs(p.dx).." ady: "..abs(p.dy), 1, 90, 9)
 ]]
+
 --[[
  print(#players,64,10,8)
  for i=1,#players do
@@ -1386,6 +1396,7 @@ print("adx: "..abs(p.dx).." ady: "..abs(p.dy), 1, 90, 9)
   end
  end
 ]]
+
 --[[
  print(#explosions,10,64,9)
  for i=1,#explosions do
@@ -1410,12 +1421,10 @@ function ease_out_quad(t,d)
  return (t-1)*(t-1)
 end
 
-function draw_game_gui()
- -- yellow band with score
+function draw_game_gui(dt)
  rectfill(0,0,128,8,9)
  for i=1,g_nb_players do
   shprint("p"..i, 2+32*(i-1), 2, 6, 0)
-  --for j=1,players[i].vic do
   for j=1,g_nb_cups_per_game do
    local tile_index = players[i].vic >= j and tiles["cup"].idx or tiles["cup"].idx+1
    palt(3,true)
@@ -1426,7 +1435,7 @@ function draw_game_gui()
  end
 end
 
-function draw_banners()
+function draw_banners(dt)
  if game_state == "counting_down" then
   local ease_duration = 0.1*g_countdown_time
   local eit = g_countdown_time - g_cd_time_left -- 0__3sec
@@ -1486,21 +1495,20 @@ function draw_game()
  if game_is_init then
   apply_palette_fx(g_fx)
   
+  local dt = g_normal_dt
   if game_state == "victory_match_announcing" then
-   g_delta_time = g_slow_dt
-  else
-   g_delta_time = g_normal_dt
+   dt = g_slow_dt
   end
   
-  draw_map()
-  draw_bombs()
-  draw_explosions()
-  draw_players()
-  draw_game_gui()
+  draw_map(dt)
+  draw_bombs(dt)
+  draw_explosions(dt)
+  draw_players(dt)
+  draw_game_gui(g_normal_dt)
   
   pal()
   
-  draw_banners()
+  draw_banners(g_normal_dt)
  else
   cls()
  end
