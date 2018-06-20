@@ -6,29 +6,35 @@ __lua__
 
 --[[ todo:
 
- [render]
- - bigger characters
- - character animations (3 sprites per anim)
- - animations mode: one_shot, loop, reverse.
-  
- [gui]
-  - nb cups per player
-  - remaining time
-  - cups screen
-  - menu screen: add nb cups goal.
-  - add transition states between screens.
- 
  [gameplay]
- - winning conditions for 1 match/cup
-  - kill player by sudden death
-  - timer -> "draw"
- - winning condition = first to max cups
+ - draw match end if double kill.
+ - timer -> map shrinking.
  - dying = scatter powerups.
 
+ [render]
+ - finish characters spritework
+ - map outline
+ - many maps spirtesets
+ - integrate particle system
+  - fire
+  - exploding stone
+  - smoke on movement
+  - smoke on dying
+  
+ [gui]
+  - remaining time, menu config for time.
+  
  [opt]
  - push bombs power
  - shoot bombs power
  - a.i.
+ 
+ [polish]
+ - title screen
+ - end screen
+ - menu animation
+ - cups animation
+ - tiles animation
 ]]
 
 g_normal_dt=0.016667
@@ -56,6 +62,7 @@ g_cd_time_left = 0.0
 g_nb_players = 2 -- 2..4
 g_nb_cups_per_game = 2
 g_max_nb_cups = 3
+g_match_time_in_sed = 1 * 60
 
 g_match_winning_player = 0
 g_game_winning_player = 0
@@ -1239,6 +1246,7 @@ end
 function draw_map(dt)
  --map(0,0,0,0,16,16)
  cls(1)
+ palt()
  local cm=1 -- current map index
  for l=1,g_tlc do
    for c=1,g_tcc do
@@ -1248,7 +1256,9 @@ function draw_map(dt)
      spr(tiles[tilename].idx, g_mop.x + g_twp*(c-1), g_mop.y + g_twp*(l-1))
      
      if tilename == "floor" and object > 0 then
-      spr(tiles[powerups[object].t].idx, g_mop.x + g_twp*(c-1), g_mop.y + g_twp*(l-1))
+	  local x=g_mop.x + g_twp*(c-1)
+	  local y=g_mop.y + g_twp*(l-1)
+      spr(tiles[powerups[object].t].idx, x,y)
      end
    end
  end
