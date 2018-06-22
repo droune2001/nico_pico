@@ -1491,12 +1491,13 @@ function draw_banners(dt)
   end
   local sprite_px = 8 * (tiles["cup"].idx % 16)
   local sprite_py = 8 * (flr(tiles["cup"].idx / 16))
+  local grow = ease_in_quad(8*ease_duration-g_cd_time_left,0.1*g_countdown_time)
   palt(3,true)
   palt(0,false)
   sspr(sprite_px, sprite_py,7,7,
-  92+8*(winning_player_vic-1)+4-ei*4,
-  63+4-ei*4,
-  1+ei*6,1+ei*6)
+  92+8*(winning_player_vic-1)+4-grow*4,
+  63+4-grow*4,
+  0+grow*7,0+grow*7)
   palt()
  end
 end
