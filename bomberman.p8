@@ -7,7 +7,6 @@ __lua__
 --[[ todo:
 
  [gameplay]
- - draw match end if double kill.
  - timer -> map shrinking.
  - dying = scatter powerups.
 
@@ -33,7 +32,6 @@ __lua__
  - title screen
  - end screen
  - menu animation
- - cups animation
  - tiles animation
 ]]
 
@@ -1041,14 +1039,17 @@ function check_match_victory()
    winning_player = i
   end
  end
- -- or time is up.
- if nb_players_alive == 1 or 
-    nb_players_alive == 0 
- then 
+ return nb_players_alive,winning_player
+ -- or time is up. -- no, when time is up the walls will crush everyone.
+ --[[
+ if nb_players_alive == 1 then 
   return winning_player 
+ elseif if nb_players_alive == 0 then 
+  return -1
  else
   return 0  
  end
+ ]]
 end
 
 function check_game_victory()
@@ -1115,10 +1116,17 @@ function update_game()
   update_explosions( g_delta_time )
   update_pickups( g_delta_time )
   update_players( g_delta_time )
-  g_match_winning_player = check_match_victory() 
-  if g_match_winning_player > 0 then
-   players[g_match_winning_player].vic += 1
+  
+  
+  
+  --g_match_winning_player = check_match_victory() 
+  local nb_players_alive, winning_player = check_match_victory()
+  if nb_players_alive <= 1 then
+   g_match_winning_player = winning_player -- global, for the banner
    game_state = "victory_match_start_announce"
+   if nb_players_alive == 1 then
+    players[winning_player].vic += 1
+   end
   end
  
  elseif game_state == "victory_match_start_announce" then
@@ -1480,25 +1488,28 @@ function draw_banners(dt)
   line(0,by,128,by,7)
   line(0,ey,128,ey,7)
   local int_cd = ceil(g_cd_time_left)
-  -- todo: anim text right to left.
-  shprint("player "..g_match_winning_player.." wins!", 64,64,7,0.5)
-  local winning_player_vic = players[g_match_winning_player].vic
-  for i=1,winning_player_vic-1 do
+  if g_match_winning_player == 1 then
+   shprint("player "..g_match_winning_player.." wins!", 164-100*ei,64,7,0.5)
+   local winning_player_vic = players[g_match_winning_player].vic
+   for i=1,winning_player_vic-1 do
+    palt(3,true)
+    palt(0,false)
+    spr(tiles["cup"].idx,192-100*ei+8*(i-1),63)
+    palt()
+   end
+   local sprite_px = 8 * (tiles["cup"].idx % 16)
+   local sprite_py = 8 * (flr(tiles["cup"].idx / 16))
+   local grow = ease_in_quad(8*ease_duration-g_cd_time_left,0.1*g_countdown_time)
    palt(3,true)
    palt(0,false)
-   spr(tiles["cup"].idx,92+8*(i-1),63)
+   sspr(sprite_px, sprite_py,7,7,
+   92+8*(winning_player_vic-1)+4-grow*4,
+   63+4-grow*4,
+   0+grow*7,0+grow*7)
    palt()
+  else -- draw match
+   shprint("draw!", 164-100*ei,64,7,0.5)
   end
-  local sprite_px = 8 * (tiles["cup"].idx % 16)
-  local sprite_py = 8 * (flr(tiles["cup"].idx / 16))
-  local grow = ease_in_quad(8*ease_duration-g_cd_time_left,0.1*g_countdown_time)
-  palt(3,true)
-  palt(0,false)
-  sspr(sprite_px, sprite_py,7,7,
-  92+8*(winning_player_vic-1)+4-grow*4,
-  63+4-grow*4,
-  0+grow*7,0+grow*7)
-  palt()
  end
 end
  
