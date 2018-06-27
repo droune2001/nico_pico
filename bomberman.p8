@@ -60,8 +60,9 @@ g_cd_time_left = 0.0
 g_nb_players = 2 -- 2..4
 g_nb_cups_per_game = 2
 g_max_nb_cups = 3
-g_match_time_in_sed = 1 * 60
-
+g_match_time_in_sec = 60
+g_current_match_time_in_sec = 60
+g_match_times = {5,30,60,120,180}
 g_match_winning_player = 0
 g_game_winning_player = 0
 
@@ -422,6 +423,7 @@ function init_next_game()
  init_map()
  reset_players()
  reset_winners()
+ restart_match_time()
 end
 
 --
@@ -494,6 +496,18 @@ end
 --
 -- update
 --
+
+function restart_match_time()
+ g_current_match_time_in_sec = g_match_time_in_sec
+end
+
+function advance_match_time(dt)
+ g_current_match_time_in_sec = max(g_current_match_time_in_sec-dt,0)
+end
+
+function is_in_timeout_zone()
+ return g_current_match_time_in_sec < 30
+end
 
 function bomb_at(c,l)
  if c < 1 or c > g_tcc or l < 1 or l > g_tlc then
@@ -1107,6 +1121,7 @@ function update_game()
 
  elseif game_state == "end_countdown" then -- todo: merge end_game and play_game states
 
+  restart_match_time()
   game_state = "play_game"
 
  elseif game_state == "play_game" then
@@ -1116,8 +1131,7 @@ function update_game()
   update_explosions( g_delta_time )
   update_pickups( g_delta_time )
   update_players( g_delta_time )
-  
-  
+  advance_match_time( g_delta_time )
   
   --g_match_winning_player = check_match_victory() 
   local nb_players_alive, winning_player = check_match_victory()
@@ -1451,6 +1465,8 @@ function draw_game_gui(dt)
    palt()
   end
  end
+ 
+ shprint(time_to_string(g_current_match_time_in_sec), 64,64,7,0.5)
 end
 
 function draw_banners(dt)
@@ -1599,6 +1615,13 @@ end
 --
 -- utils
 --
+
+function time_to_string(t)
+ local mins = flr(t/60)
+ local secs = flr(t-60*mins)
+ local secs_text = secs < 10 and "0"..secs or ""..secs
+ return mins..":"..secs_text
+end
 
 function set(obj,props)
  obj=obj or {}
