@@ -12,7 +12,7 @@ __lua__
 
  [render]
  - finish characters spritework
- - map outline
+ - map outline (animated?)
  - many maps spirtesets
  - integrate particle system
   - fire
@@ -60,12 +60,13 @@ g_cd_time_left = 0.0
 g_nb_players = 2 -- 2..4
 g_nb_cups_per_game = 2
 g_max_nb_cups = 3
-g_match_time_in_sec = 60
+--g_match_time_in_sec = 60
+g_match_time_in_sec = 22
 g_current_match_time_in_sec = 60
+g_alert_time = 20
 g_match_times = {5,30,60,120,180}
 g_match_winning_player = 0
 g_game_winning_player = 0
-
 g_conf_index = 0
 
 
@@ -87,6 +88,8 @@ g_bomb_timeout = 2 -- nb seconds before explosion
 g_explosion_duration = 0.8 -- nb seconds during which fire is harmful
 g_pickup_timeout = 999 -- 8 -- nb seconds before pickup disappears
 g_bomb_spr = 23
+
+g_lava = { ring=-1 }
 
 -- effects:
 -- 0 = normal 
@@ -187,6 +190,8 @@ function init_tiles()
  tiles["pu_bomb"] = {idx=7,tag=0,d=1,bbox={x=0,y=0,w=8,h=8}}
  tiles["pu_speed"] = {idx=8,tag=0,d=1,bbox={x=0,y=0,w=8,h=8}}
  tiles["pu_fire"] = {idx=9,tag=0,d=1,bbox={x=0,y=0,w=8,h=8}}
+ 
+ tiles["lava"] = {idx=207,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  
  tiles["block_expl"] = {idx=252,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
  tiles["fire_center"] = {idx=237,tag=0,d=0,bbox={x=0,y=0,w=8,h=8}}
@@ -360,7 +365,7 @@ function init_map()
    
    -- fill with pickups
    --local rnd_object = max(0,flr(rnd(12) - 8.5)) -- 3/4 chance to have 0, then 1,2,3
-   local rnd_object = flr(rnd(3))+1 -- 3/4 chance to have 0, then 1,2,3
+   local rnd_object = flr(rnd(3))+1
    map0[ti].o = rnd_object
    pickups[ti] = {t=g_pickup_timeout,o=rnd_object}
    
@@ -402,6 +407,7 @@ function reset_renderables()
  bombs={} -- active bombs on field
  explosions={} -- active explosions on field
  pickups={} -- active powerups on field
+ g_lava.ring = -1
  debug_rects={}
 end
 
@@ -506,7 +512,7 @@ function advance_match_time(dt)
 end
 
 function is_in_timeout_zone()
- return g_current_match_time_in_sec < 30
+ return g_current_match_time_in_sec < g_alert_time
 end
 
 function bomb_at(c,l)
@@ -707,7 +713,7 @@ function move_player( p, acc, dt )
 	   if ok then
 	    wall_normal = {x=-1,y=0}
 	    hit_tile_index = {c=t.c,l=t.l}
-      tmin = local_tmin
+        tmin = local_tmin
 	   end
 	 
 	   -- right edge
@@ -715,7 +721,7 @@ function move_player( p, acc, dt )
 	   if ok then
 	    wall_normal = {x=1,y=0}
 	    hit_tile_index = {c=t.c,l=t.l}
-      tmin = local_tmin
+        tmin = local_tmin
 	   end
 
 	   -- top edge
@@ -723,7 +729,7 @@ function move_player( p, acc, dt )
 	   if ok then
 	    wall_normal = {x=0,y=-1}
 	    hit_tile_index = {c=t.c,l=t.l}
-      tmin = local_tmin
+        tmin = local_tmin
 	   end
 	 
 	   -- bottom edge
@@ -731,7 +737,7 @@ function move_player( p, acc, dt )
 	   if ok then
 	    wall_normal = {x=0,y=1}
 	    hit_tile_index = {c=t.c,l=t.l}
-      tmin = local_tmin
+        tmin = local_tmin
 	   end
 
 	  end -- if tested tile if collidable
@@ -779,13 +785,12 @@ function drop_bomb(p)
   -- player bbox in pixel map space
   local player_bbox_center = {
    x = p.x + player_tile_bbox.x + 0.5 * player_tile_bbox.w,
-   y = p.y + player_tile_bbox.y + 0.5 * player_tile_bbox.h
-  }
+   y = p.y + player_tile_bbox.y + 0.5 * player_tile_bbox.h }
  
   local bomb_tile = {
    x = g_twp * flr(player_bbox_center.x/g_twp),
-   y = g_twp * flr(player_bbox_center.y/g_twp)
-  }
+   y = g_twp * flr(player_bbox_center.y/g_twp) }
+   
   local bomb_ti = get_tile_index(
    1 + flr(player_bbox_center.x/g_twp), 
    1 + flr(player_bbox_center.y/g_twp))
@@ -1044,6 +1049,40 @@ function update_explosions( dt )
  end
 end
 
+
+g_nb_rings=-1
+g_time_slice=-1
+g_current_ring=-1
+g_ti = -1
+
+function update_lava(dt)
+	if is_in_timeout_zone() then
+		local nb_rings = flr(g_tcc/2)
+		g_nb_rings = nb_rings
+		local time_slice = g_alert_time / nb_rings
+		g_time_slice = time_slice
+		local current_ring = nb_rings - flr(g_current_match_time_in_sec / time_slice) - 1
+		g_current_ring = current_ring
+		if g_lava.ring < current_ring then
+			g_lava.ring = current_ring
+			-- fill ring with lava
+			local c_start = current_ring
+			local c_end = g_tcc - current_ring - 1
+			for i=0,c_end-c_start do
+			  for j=0,c_end-c_start do
+			    local ll = c_start + i
+			    local cc = c_start + j
+			    local ti = get_tile_index(ll+1, cc+1)
+				if ll == c_start or ll == c_end or cc == c_start or cc == c_end then
+			        --maps[1][ti].f += 1
+				    maps[1][ti].t = "lava"
+			    end
+			  end
+			end
+		end
+	end
+end
+
 function check_match_victory()
  local nb_players_alive = 0
  local winning_player = 0
@@ -1129,17 +1168,25 @@ function update_game()
   debug_rects={} -- leak but garbage collector?
   update_bombs( g_delta_time )
   update_explosions( g_delta_time )
+  update_lava( g_delta_time )
   update_pickups( g_delta_time )
   update_players( g_delta_time )
   advance_match_time( g_delta_time )
   
-  --g_match_winning_player = check_match_victory() 
   local nb_players_alive, winning_player = check_match_victory()
   if nb_players_alive <= 1 then
    g_match_winning_player = winning_player -- global, for the banner
    game_state = "victory_match_start_announce"
    if nb_players_alive == 1 then
     players[winning_player].vic += 1
+   end
+  else
+   if is_in_timeout_zone() then
+    -- start (asynchronous?) wall crush.
+	-- if not async, just advance one ring at a time
+	-- over the 20 sec of crush time.
+	-- todo: lava flows from the walls
+	-- many tiles, blob-like look.
    end
   end
  
@@ -1372,6 +1419,12 @@ function draw_debug_gui()
   rect(r.x0,r.y0,r.x1,r.y1,r.c)
  end
 
+ shprint("g_nb_rings = "..g_nb_rings, 1, 10, 2, 0)
+ shprint("g_time_slice = "..g_time_slice, 1, 20, 2, 0)
+ shprint("g_current_ring = "..g_current_ring, 1, 30, 2, 0)
+ shprint("ti = "..g_ti, 1, 40, 2, 0)
+ shprint("ring = "..g_lava.ring, 1, 92, 2, 0)
+ 
 --[[ 
  shprint("state = "..state, 1, 92, 2, 0)
  shprint("m_state = "..menu_state, 1, 100, 2, 0)
@@ -1871,14 +1924,14 @@ e3ccdd3333cddd3333ccdd3e33cccd333337ec33e3cccd3333dccc3333ce733333dccc3ee3ccdd33
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
 00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
-000785005800000000000085005870000000000000000000000000009e84d4dedddddddd00000000000000000000000000000000000000000000000000000000
-077777700777770000777770077777700000000000000000000000004d39e9e36666666600000000000000000000000000000000000000000000000000000000
-77777767777777700777777777666667000000000000000000000000e84d3d396666666600000000000000000000000000000000000000000000000000000000
-77767676777742400424777774244246000000000000000000000000111111116666666600000000000000000000000000000000000000000000000000000000
-7777676677679df00fd9767779dffd96000000000000000000000000666666661111111100000000000000000000000000000000000000000000000000000000
-07666660077666600666677007777770000000000000000000000000666666669e84d4de00000000000000000000000000000000000000000000000000000000
-0ecccce000ecce0000ecce000ecccce0000000000000000000000000666666664d39e9e300000000000000000000000000000000000000000000000000000000
-00411400000404000040400000411400000000000000000000000000dddddddde84d3d3900000000000000000000000000000000000000000000000000000000
+000785005800000000000085005870000000000000000000000000009e84d4dedddddddd00000000000000000000000000000000000000000000000099a99999
+077777700777770000777770077777700000000000000000000000004d39e9e36666666600000000000000000000000000000000000000000000000098989989
+77777767777777700777777777666667000000000000000000000000e84d3d396666666600000000000000000000000000000000000000000000000099998a99
+777676767777424004247777742442460000000000000000000000001111111166666666000000000000000000000000000000000000000000000000a9989989
+7777676677679df00fd9767779dffd9600000000000000000000000066666666111111110000000000000000000000000000000000000000000000009899a899
+07666660077666600666677007777770000000000000000000000000666666669e84d4de000000000000000000000000000000000000000000000000998998a9
+0ecccce000ecce0000ecce000ecccce0000000000000000000000000666666664d39e9e300000000000000000000000000000000000000000000000098a88a7a
+00411400000404000040400000411400000000000000000000000000dddddddde84d3d39000000000000000000000000000000000000000000000000998998a9
 0e888000008000000e8888000000000000000000000000004de9ed396666666666666666666666669ed394de0000000000000000000000000000000000000000
 e7e8880077777700e88888800000000000000000000000009e34de4d6666666666666666666666664de4d9e30000000000000000000000000000000000000000
 8e2f28007f5f57008f2ff280000000000000000000000000d39e838966dddddddddddddddddddd66e8389d390000000000000000000000000000000000000000
